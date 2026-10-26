@@ -10,6 +10,7 @@ from scipy.stats import ttest_ind
 
 WINDOWS = {'Yesterday': 1, 'Last 7 Days': 7, 'Last Month': 28, 'Last 6 Months': 182, 'Last Year': 364}
 GROUPS = [('region', 'format'), ('region', 'size'), ('format', 'size')]
+MIN_ABSOLUTE_IMPACT = 25_000  # USD; apply independently within each time period
 
 
 def _bh_adjust(pvalues):
@@ -83,7 +84,7 @@ def discover_v3(data: pd.DataFrame, min_stores: int = 5, max_results_per_period:
                 peer_growth = peers.ty.sum()/peer_ly-1
                 delta_pp = 100 * (group_growth-peer_growth)
                 impact = group.ly.sum() * (group_growth-peer_growth)
-                if abs(delta_pp) < 1.0:
+                if abs(delta_pp) < 1.0 or abs(impact) < MIN_ABSOLUTE_IMPACT:
                     continue
                 test = ttest_ind(group.growth, peers.growth, equal_var=False, nan_policy='omit')
                 pval = float(test.pvalue) if np.isfinite(test.pvalue) else 1.0
@@ -150,6 +151,7 @@ def discover_v3(data: pd.DataFrame, min_stores: int = 5, max_results_per_period:
     frame['confidence'] = np.where(frame.q_value < .05, 'FDR significant', 'Exploratory')
     # Executive priority is strictly absolute descriptive financial deviation.
     # Deduplicate identical groups WITHIN each period, never across periods.
+    frame = frame.loc[frame.relative_dollars.abs() >= MIN_ABSOLUTE_IMPACT].copy()
     frame['priority'] = frame.relative_dollars.abs()
     frame = (frame.sort_values(['period','priority'], ascending=[True,False])
                   .drop_duplicates(['period','attribute','group'])

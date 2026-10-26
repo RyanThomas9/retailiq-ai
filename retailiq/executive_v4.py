@@ -127,7 +127,7 @@ def render_executive(scored, quality, findings):
     tabs = st.tabs(periods)
     for tab, period in zip(tabs, periods):
         with tab:
-            subset = findings.loc[findings.period.eq(period)].sort_values('relative_dollars', key=lambda v: v.abs(), ascending=False).head(3)
+            subset = findings.loc[findings.period.eq(period) & (findings.relative_dollars.abs() >= 25_000)].sort_values('relative_dollars', key=lambda v: v.abs(), ascending=False).head(3)
             if subset.empty:
                 st.info(f'No qualifying financial deviations found for {period.lower()}.')
                 continue
@@ -155,22 +155,36 @@ def render_executive(scored, quality, findings):
                     _driver('Conversion',row.conversion_dollars),
                     _driver('Order size',row.order_size_dollars)]))
                 lead = str(row.lead_driver)
-                if lead == 'Traffic':
-                    advice = 'Review local demand, store traffic, and acquisition channels; compare visit patterns with peers.'
-                elif lead == 'Conversion':
-                    advice = 'Investigate product availability, staffing coverage, selling effectiveness and conversion by day.'
-                elif lead == 'Order size':
-                    advice = 'Review units per transaction, product mix, discounts, pricing and attachment rates.'
+                lead_amount = float(row.lead_impact)
+                driver_label = {'Traffic': 'traffic', 'Conversion': 'conversion', 'Order size': 'order size'}.get(lead)
+                if driver_label and np.isfinite(lead_amount):
+                    driver_amount = ('+' if lead_amount >= 0 else '−') + dollars(abs(lead_amount))
+                    headline = f'{driver_label.capitalize()} is the largest measured driver of {group} stores’ {direction} performance'
+                    driver_summary = f'{driver_label.capitalize()} contributes {driver_amount} of the {impact} peer-relative deviation.'
                 else:
-                    advice = 'Investigate traffic, conversion and order size with comparable stores.'
+                    headline = f'{group} stores are {direction} comparable stores on YoY growth'
+                    driver_summary = 'Driver contribution could not be estimated reliably.'
+                if lead == 'Traffic':
+                    advice = ('Compare local traffic, acquisition channels and nearby demand with peers; test changes that could restore visits.' if not positive
+                              else 'Identify sources of stronger visits (local marketing, events or nearby demand) and test whether they can be replicated in peer markets.')
+                elif lead == 'Conversion':
+                    advice = ('Compare in-stock availability, peak-hour staffing and conversion by day against peers; prioritize a targeted diagnostic before intervening.' if not positive
+                              else 'Identify practices behind stronger conversion—availability, selling coverage and service—and test whether they transfer to comparable stores.')
+                elif lead == 'Order size':
+                    advice = ('Review basket mix, discounting, attachments and units per transaction against peers; isolate the source of the order-size decline.' if not positive
+                              else 'Identify product mix, attachments and pricing patterns supporting larger baskets; test replicability without sacrificing margin.')
+                else:
+                    advice = ('Investigate traffic, conversion and order size with comparable stores; attribution is currently unavailable.' if not positive
+                              else 'Validate the positive pattern against comparable stores before expanding any practices.')
                 st.markdown(f'''<div class="ri-discovery {color}">
                     <div class="ri-discovery-tags"><span class="ri-rank">#{rank}</span><span class="ri-status {'good' if positive else 'bad'}">{'OUTPERFORMING' if positive else 'UNDERPERFORMING'}</span><span class="ri-trend">{escape(period.upper())}</span><span class="ri-trend">{trend_label}</span><span class="ri-count">{stores} STORES</span><span class="ri-exploratory">{evidence_label}</span></div>
-                    <div class="ri-discovery-heading">{group} stores are {direction} comparable stores on YoY growth</div>
+                    <div class="ri-discovery-heading">{escape(headline)}</div>
                     <div class="ri-discovery-impact">{impact} <small>versus growing at the peer rate (descriptive)</small></div>
                     <div class="ri-discovery-evidence">{yoy_label} · Growth difference <strong class="ri-number">{relative_pct} pts</strong> · {breadth:.0f}% of stores align{persist_label}</div>
+                    <div class="ri-discovery-evidence">{escape(driver_summary)}</div>
                     <div class="ri-discovery-evidence"><strong>Where the gap came from:</strong> {components or 'Insufficient traffic / order data for decomposition'}</div>
                     <div class="ri-discovery-action"><strong>What to investigate:</strong> {escape(advice)}</div>
-                    <div class="ri-discovery-foot">Ranked by absolute financial deviation within this period · Welch store-level test · FDR q={float(row.q_value):.3f} · Not a causal lost-sales estimate.</div>
+                    <div class="ri-discovery-foot">Minimum |financial deviation| $25K · Ranked by absolute financial deviation within this period · Welch store-level test · FDR q={float(row.q_value):.3f} · Not a causal lost-sales estimate.</div>
                 </div>''', unsafe_allow_html=True)
     # Severe weather is elevated only when a public representative-city forecast crosses thresholds.
     # Failure to retrieve forecasts is not interpreted as 'no risk'.
