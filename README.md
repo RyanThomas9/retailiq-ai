@@ -35,3 +35,9 @@ streamlit run app.py
 - Financial deviations are not causal effects or guaranteed recoverable revenue.
 - The executive narrative is deterministic and grounded in generated model outputs, not an LLM or live economic data.
 - The testing calculator is illustrative and does not establish causal identification by itself.
+
+## Executive Intelligence upgrade
+
+The home page now displays Yesterday, 1 Week, 13 Weeks, and 52 Weeks, comparing synthetic actual sales to model-fitted expected sales, previous periods, and 364-day-aligned prior-year periods. The last 90 days form the chronological validation holdout; earlier model expectations are in-sample fitted values and **must not** be interpreted as independently validated forecasts. The macro section optionally fetches public FRED CSV series (`UNRATE`, `CPIAUCSL`, `RSAFS`); if internet access fails, it displays no invented data. No external signals are yet included in the forecasting model or used to claim causality.
+
+To deploy, upload the contents of this ZIP to the root of the GitHub repository preserving the `retailiq/` directory, and Streamlit Cloud will redeploy from `app.py`.
