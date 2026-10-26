@@ -86,29 +86,49 @@ def render_executive(scored, quality, findings):
             st.markdown(f'''<div class="ri-kpi"><div class="ri-kpi-label">{label}</div>
                 <div class="ri-kpi-value">{dollars(m['actual'])}</div>
                 <span class="ri-chip {tone}">{pct(m['gap_pct'])} vs expected</span>
-                <div class="ri-kpi-bottom">YoY {pct(m['yoy_pct'])}</div></div>''', unsafe_allow_html=True)
+                <div class="ri-kpi-bottom {'positive' if np.isfinite(m['yoy_pct']) and m['yoy_pct'] >= 0 else 'negative' if np.isfinite(m['yoy_pct']) else ''}">YoY {pct(m['yoy_pct'])}</div></div>''', unsafe_allow_html=True)
     st.markdown('<div class="ri-section">✦ &nbsp; Top AI Discoveries Found Yesterday</div>', unsafe_allow_html=True)
     st.caption('Most recent available model run · These are exploratory store-group patterns, not confirmed causal findings. Daily scheduling is not yet enabled.')
+    st.markdown("""<style>
+    .ri-kpi .ri-kpi-value {color:#F7F9FF}
+    .ri-kpi .ri-kpi-bottom.positive {color:#34D399!important;font-weight:700}
+    .ri-kpi .ri-kpi-bottom.negative {color:#FB7185!important;font-weight:700}
+    .ri-discovery {margin:13px 0 18px!important;padding:23px 26px!important;}
+    .ri-discovery.positive {border-left:4px solid #34D399!important}
+    .ri-discovery.negative {border-left:4px solid #FB7185!important}
+    .ri-discovery.positive .ri-discovery-impact,.ri-discovery.positive .ri-number {color:#34D399!important}
+    .ri-discovery.negative .ri-discovery-impact,.ri-discovery.negative .ri-number {color:#FB7185!important}
+    .ri-discovery-heading {font-size:1.27rem!important;line-height:1.4!important}
+    .ri-discovery-tags span:first-child {background:#4A295C;color:#EBD7FF}
+    .ri-discovery-tags span:last-child {border:1px solid #7B4DB0;background:transparent}
+    .ri-discovery-action {border-left:3px solid #FACC15;color:#FFE59B!important}
+    .ri-discovery-evidence {color:#C6B4F3;font-size:.85rem;margin:10px 0}
+    .ri-discovery-foot {font-size:.75rem;color:#9AAAC3;margin-top:12px}
+    </style>""", unsafe_allow_html=True)
     if findings.empty:
         st.info('No qualifying discoveries in the latest synthetic data.')
     else:
-        top = findings.iloc[0]
-        positive = float(top.relative_dollars) >= 0
-        label = 'Outperforming peers' if positive else 'Underperforming peers'
-        impact = ('+' if positive else '−') + dollars(abs(float(top.relative_dollars)))
-        color = 'positive' if positive else 'negative'
-        st.markdown(f'''<div class="ri-discovery {color}">
-            <div class="ri-discovery-tags"><span>TOP DISCOVERY</span><span>28-DAY PATTERN</span><span>{int(top.stores)} STORES</span><span>EXPLORATORY</span></div>
-            <div class="ri-discovery-heading">{escape(str(top.group))} stores are {label.lower()}</div>
-            <div class="ri-discovery-impact">{impact} <small>brand-relative deviation</small></div>
-            <div class="ri-discovery-detail">Relative variance {pct(float(top.relative_pct))} · {float(top.breadth):.0f}% of stores share the direction.</div>
-            <div class="ri-discovery-action">What to investigate: Review traffic, conversion, order size, inventory availability and labor coverage in this store group.</div>
+        for rank, (_, row) in enumerate(findings.head(3).iterrows(), start=1):
+            delta = float(row.relative_dollars)
+            positive = delta >= 0
+            direction = 'outperforming' if positive else 'underperforming'
+            impact = ('+' if positive else '−') + dollars(abs(delta))
+            color = 'positive' if positive else 'negative'
+            group = escape(str(row.group))
+            relative_pct = pct(float(row.relative_pct))
+            stores = int(row.stores)
+            breadth = float(row.breadth)
+            st.markdown(f'''<div class="ri-discovery {color}">
+                <div class="ri-discovery-tags"><span>#{rank} · {"POSITIVE" if positive else "NEGATIVE"} DISCOVERY</span><span>28-DAY PATTERN</span><span>{stores} STORES</span><span>EXPLORATORY</span></div>
+                <div class="ri-discovery-heading">{group} stores are {direction} their brand-adjusted benchmark</div>
+                <div class="ri-discovery-impact">{impact} <small>brand-relative deviation over the analysis window</small></div>
+                <div class="ri-discovery-evidence">Relative performance: <strong class="ri-number">{relative_pct}</strong> · Stores sharing the direction: {breadth:.0f}%</div>
+                <div class="ri-discovery-action"><strong>What to check:</strong> Compare traffic, conversion, order size, product availability and staffing coverage with comparable stores.</div>
+                <div class="ri-discovery-foot">Exploratory store-group finding · Descriptive association, not a confirmed causal or incremental sales impact.</div>
             </div>''', unsafe_allow_html=True)
-        for idx, row in findings.iloc[1:3].iterrows():
-            st.markdown(f'''<div class="ri-compact-discovery"><span>{escape(str(row.group))}</span><strong>{pct(float(row.relative_pct))}</strong><small>{int(row.stores)} stores · {dollars(abs(float(row.relative_dollars)))} relative deviation</small></div>''', unsafe_allow_html=True)
         if len(findings) > 3:
             with st.expander('View additional discoveries'):
-                st.dataframe(findings[['group','stores','relative_dollars','relative_pct','breadth']], hide_index=True, use_container_width=True)
+                st.dataframe(findings[['group','stores','relative_dollars','relative_pct','breadth']], hide_index=True, width='stretch')
     # Severe weather is elevated only when a public representative-city forecast crosses thresholds.
     # Failure to retrieve forecasts is not interpreted as 'no risk'.
     try:
