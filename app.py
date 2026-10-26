@@ -25,6 +25,7 @@ with st.spinner('Preparing synthetic retail intelligence...'):
 
 with st.sidebar:
     st.markdown('<div class="ri-brand">◈ RetailIQ <span>AI</span></div><div class="ri-sidebar-caption">RETAIL INTELLIGENCE PLATFORM</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ri-sidebar-caption">EXECUTIVE + BUSINESS INTELLIGENCE</div>', unsafe_allow_html=True)
     page = st.radio('Navigate', ['◈  Executive Intelligence', '▥  Sales Intelligence', '↗  Marketing Intelligence', '♙  Customer Intelligence', '◫  Merchandise Intelligence', '▦  Store Intelligence', '☁  Weather Intelligence', '◎  Macro Intelligence', '◇  Testing Intelligence', '◷  Model Performance'], label_visibility='collapsed')
     st.divider()
     st.caption('●  SYNTHETIC DATA DEMO')
