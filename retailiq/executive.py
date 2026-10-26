@@ -6,6 +6,7 @@ import requests
 import streamlit as st
 import plotly.graph_objects as go
 from html import escape
+from retailiq.weather import forecast_summary
 
 PERIODS = {'Yesterday': 1, '1 Week': 7, '13 Weeks': 91, '52 Weeks': 364}
 
@@ -117,6 +118,20 @@ def render_executive(scored, quality, findings):
         else:
             for i, r in findings.head(3).reset_index(drop=True).iterrows():
                 st.markdown(f'<div class="ri-finding"><div class="ri-finding-title">{i+1:02d} &nbsp; {escape(str(r.group))} &nbsp;·&nbsp; {pct(r.relative_pct)}</div><div class="ri-finding-meta">{r.stores} stores &nbsp;·&nbsp; {dollars(abs(r.relative_dollars))} brand-relative deviation</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ri-section">Weather risk · next 7 days</div>', unsafe_allow_html=True)
+    wx, wx_errors = forecast_summary()
+    if wx.empty:
+        st.info('Public weather forecast unavailable. Weather risk not assessed.')
+    else:
+        active = wx.loc[wx.severe | wx.snow]
+        if active.empty:
+            st.success('No snow or severe-weather threshold events forecast for the four representative regional cities.')
+        else:
+            regions = ', '.join(sorted(active.region.unique()))
+            st.warning(f'{len(active)} region-days above severe-weather or snow thresholds across {regions}. See Weather Intelligence for details.')
+        if wx_errors:
+            st.caption('Forecast unavailable for: ' + ', '.join(wx_errors))
+    st.caption('Forecasts are for representative cities, not actual stores. Weather-related lost sales are not estimated.')
     st.markdown('<div class="ri-section">Real-world economic intelligence</div>', unsafe_allow_html=True)
     render_macro()
     st.markdown(f'<div class="ri-footnote">Synthetic portfolio demonstration · Holdout WAPE {quality["wape"]:.1f}% over 90 days · External indicators are context, not proven causes of sales changes.</div>', unsafe_allow_html=True)
