@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 import requests
 import streamlit as st
+import plotly.graph_objects as go
+from html import escape
 
 PERIODS = {'Yesterday': 1, '1 Week': 7, '13 Weeks': 91, '52 Weeks': 364}
 
@@ -66,45 +68,55 @@ def render_macro():
     st.info('External conditions are not automatically treated as sales drivers. A future model will align external signals with geography and time, test lagged relationships, and validate incremental predictive value.')
 
 
+
 def render_executive(scored, quality, findings):
-    st.caption('RETAILIQ AI  /  EXECUTIVE INTELLIGENCE  /  SYNTHETIC RETAIL DATA')
+    end = scored.date.max()
+    st.markdown('<div class="ri-eyebrow">◈ &nbsp; RetailIQ / Executive Intelligence</div>', unsafe_allow_html=True)
     st.title('Your business, analyzed.')
-    st.write('What happened. Why it matters. What to investigate next.')
-    st.caption(f'Synthetic sales through {scored.date.max():%b %d, %Y} · Public economic observations are live when available')
-    st.subheader('Sales performance')
-    cols = st.columns(4)
-    metrics = {}
-    for col, (label, days) in zip(cols, PERIODS.items()):
-        m = period_metrics(scored, days)
-        metrics[label] = m
+    st.markdown(f'<div class="ri-subtitle">A model-driven briefing on retail performance &nbsp;·&nbsp; Synthetic data through {end:%B %d, %Y}</div>', unsafe_allow_html=True)
+    metrics = {label: period_metrics(scored, days) for label, days in PERIODS.items()}
+    cols = st.columns(4, gap='medium')
+    for col, (label, m) in zip(cols, metrics.items()):
+        tone = 'pos' if m['gap'] >= 0 else 'neg'
+        sign = '↑' if m['gap'] >= 0 else '↓'
         with col:
-            st.metric(label, dollars(m['actual']), pct(m['gap_pct']) + ' vs expected')
-            st.caption(f'Expected {dollars(m["expected"])} · Gap {dollars(m["gap"])}')
-            st.caption(f'Prior period: {pct(m["prior_pct"])} · YoY: {pct(m["yoy_pct"])}')
-    st.subheader('Executive assessment')
-    short = metrics['1 Week']
-    long = metrics['13 Weeks']
-    direction = 'below' if short['gap'] < 0 else 'above'
-    st.markdown(f'**Sales for the last seven days were {pct(short["gap_pct"])} versus the model expectation**, '
-                f'with a {dollars(abs(short["gap"]))} {"shortfall" if short["gap"] < 0 else "surplus"}. '
-                f'The 13-week comparison is {pct(long["gap_pct"])} versus expected.')
+            st.markdown(f'''<div class="ri-kpi"><div class="ri-kpi-label">{label}</div>
+            <div class="ri-kpi-value">{dollars(m['actual'])}</div>
+            <span class="ri-chip {tone}">{sign} {pct(m['gap_pct'])} vs expected</span>
+            <div class="ri-meta">Expected {dollars(m['expected'])} &nbsp;·&nbsp; Gap {dollars(m['gap'])}<br>
+            Prior {pct(m['prior_pct'])} &nbsp;·&nbsp; YoY {pct(m['yoy_pct'])}</div></div>''', unsafe_allow_html=True)
+    st.markdown('<div class="ri-section">Executive briefing</div>', unsafe_allow_html=True)
+    short = metrics['1 Week']; long = metrics['13 Weeks']
+    gap_desc = 'below' if short['gap'] < 0 else 'above'
+    message = (f'Over the past seven days, sales of <b>{dollars(short["actual"])}</b> were '
+               f'<b>{abs(short["gap_pct"]):.1f}% {gap_desc} model expectations</b> '
+               f'({dollars(abs(short["gap"]))} in absolute variance). '
+               f'The 13-week comparison is <b>{pct(long["gap_pct"])} versus expected</b>.')
     if not findings.empty:
         top = findings.iloc[0]
-        st.write(f'**Priority investigation:** {top.group} stores show a {dollars(abs(top.relative_dollars))} '
-                 f'brand-relative deviation over the latest 28 days, across {top.stores} stores. '
-                 'This is a descriptive association, not proven incremental lost sales.')
-    else:
-        st.write('No store-group patterns met the current discovery thresholds.')
-    st.caption('Briefing generated from model outputs, not an LLM. External data is not used to assert causes.')
-    st.subheader('What needs your attention')
-    if not findings.empty:
-        for i, r in findings.head(3).reset_index(drop=True).iterrows():
-            with st.container(border=True):
-                st.markdown(f'**{i+1:02d} · {r.group}** — {pct(r.relative_pct)} brand-relative deviation')
-                st.caption(f'{r.stores} stores · {dollars(abs(r.relative_dollars))} deviation · {r.breadth:.0f}% same-direction breadth')
-    else:
-        st.info('No qualifying high-priority discoveries in this run.')
+        message += (f'<br><br><b>Priority investigation:</b> {escape(str(top.group))} stores show '
+                    f'a {dollars(abs(top.relative_dollars))} brand-relative deviation over 28 days '
+                    f'across {top.stores} stores. This is a descriptive pattern, not a causal estimate.')
+    st.markdown(f'<div class="ri-brief"><div class="ri-brief-title">✦ &nbsp; AI-style executive assessment</div><div class="ri-brief-body">{message}</div></div>', unsafe_allow_html=True)
+    left, right = st.columns([1.65, 1], gap='large')
+    with left:
+        st.markdown('<div class="ri-section">Sales trajectory</div>', unsafe_allow_html=True)
+        days = st.segmented_control('View', ['4 Weeks', '13 Weeks', '52 Weeks'], default='13 Weeks', label_visibility='collapsed')
+        n = {'4 Weeks':28, '13 Weeks':91, '52 Weeks':364}[days]
+        trend = scored.loc[scored.date > end - pd.Timedelta(days=n)].groupby('date', as_index=False)[['sales','expected']].sum()
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=trend.date, y=trend.sales, name='Actual', mode='lines', line=dict(color='#B59AFF', width=2.8), fill='tozeroy', fillcolor='rgba(155,124,235,0.07)'))
+        fig.add_trace(go.Scatter(x=trend.date, y=trend.expected, name='Model expected', mode='lines', line=dict(color='#63C5C9', width=2, dash='dot')))
+        fig.update_layout(height=310, margin=dict(l=4,r=8,t=10,b=5), paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',font=dict(color='#A8B6CD',size=11),legend=dict(orientation='h',y=1.16,x=0),hovermode='x unified',xaxis=dict(showgrid=False),yaxis=dict(gridcolor='#263347',tickprefix='$',tickformat='.2s'))
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar':False})
+        st.caption('Historical fitted values before the 90-day holdout; do not interpret the full 52-week line as out-of-sample accuracy.')
+    with right:
+        st.markdown('<div class="ri-section">What needs your attention</div>', unsafe_allow_html=True)
+        if findings.empty:
+            st.info('No qualifying store-group findings.')
+        else:
+            for i, r in findings.head(3).reset_index(drop=True).iterrows():
+                st.markdown(f'<div class="ri-finding"><div class="ri-finding-title">{i+1:02d} &nbsp; {escape(str(r.group))} &nbsp;·&nbsp; {pct(r.relative_pct)}</div><div class="ri-finding-meta">{r.stores} stores &nbsp;·&nbsp; {dollars(abs(r.relative_dollars))} brand-relative deviation</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ri-section">Real-world economic intelligence</div>', unsafe_allow_html=True)
     render_macro()
-    st.subheader('Explore intelligence')
-    st.write('Use the navigation on the left to open Sales, Marketing, Customer, Merchandise, Store, Macro, Testing or Model Performance.')
-    st.caption(f'Holdout WAPE: {quality["wape"]:.1f}% · Forecast performance is measured on the most recent 90 days, not the entire history.')
+    st.markdown(f'<div class="ri-footnote">Synthetic portfolio demonstration · Holdout WAPE {quality["wape"]:.1f}% over 90 days · External indicators are context, not proven causes of sales changes.</div>', unsafe_allow_html=True)
