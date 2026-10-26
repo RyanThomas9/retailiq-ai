@@ -23,13 +23,52 @@ def prepare():
 with st.spinner('Preparing synthetic retail intelligence...'):
     data, scored, quality, findings = prepare()
 
+NAV_GROUPS = {
+    "OVERVIEW": [
+        ("◈  Executive Intelligence", "Executive Intelligence"),
+    ],
+    "BUSINESS INTELLIGENCE": [
+        ("▥  Sales Intelligence", "Sales Intelligence"),
+        ("↗  Marketing Intelligence", "Marketing Intelligence"),
+        ("♙  Customer Intelligence", "Customer Intelligence"),
+        ("▤  Inventory Intelligence", "Inventory Intelligence"),
+        ("♧  Labor Intelligence", "Labor Intelligence"),
+        ("▦  Store Intelligence", "Store Intelligence"),
+        ("◫  Merchandise Intelligence", "Merchandise Intelligence"),
+        ("◎  Macro Intelligence", "Macro Intelligence"),
+        ("☁  Weather Intelligence", "Weather Intelligence"),
+    ],
+    "ANALYTICS & VALIDATION": [
+        ("◇  Testing Intelligence", "Testing Intelligence"),
+        ("◷  Model Performance", "Model Performance"),
+    ],
+}
+
+# These two areas are planned; don't imply that their models already exist.
+AVAILABLE = {"Executive Intelligence", "Sales Intelligence", "Marketing Intelligence",
+             "Customer Intelligence", "Merchandise Intelligence", "Store Intelligence",
+             "Macro Intelligence", "Weather Intelligence", "Testing Intelligence", "Model Performance"}
+if "ri_page" not in st.session_state:
+    st.session_state.ri_page = "Executive Intelligence"
+
+def _navigate(destination):
+    st.session_state.ri_page = destination
+
 with st.sidebar:
     st.markdown('<div class="ri-brand">◈ RetailIQ <span>AI</span></div><div class="ri-sidebar-caption">RETAIL INTELLIGENCE PLATFORM</div>', unsafe_allow_html=True)
-    st.markdown('<div class="ri-sidebar-caption">EXECUTIVE + BUSINESS INTELLIGENCE</div>', unsafe_allow_html=True)
-    page = st.radio('Navigate', ['◈  Executive Intelligence', '▥  Sales Intelligence', '↗  Marketing Intelligence', '♙  Customer Intelligence', '◫  Merchandise Intelligence', '▦  Store Intelligence', '☁  Weather Intelligence', '◎  Macro Intelligence', '◇  Testing Intelligence', '◷  Model Performance'], label_visibility='collapsed')
-    st.divider()
-    st.caption('●  SYNTHETIC DATA DEMO')
-    st.caption('Model-driven insights · Public economic data')
+    for group, destinations in NAV_GROUPS.items():
+        st.markdown(f'<div class="ri-nav-heading">{group}</div>', unsafe_allow_html=True)
+        for label, destination in destinations:
+            active = st.session_state.ri_page == destination
+            st.button(label + ("  · SOON" if destination not in AVAILABLE else ""),
+                      key="ri_nav_" + destination.replace(" ", "_"),
+                      type="primary" if active else "secondary",
+                      disabled=destination not in AVAILABLE,
+                      on_click=_navigate, args=(destination,), width="stretch")
+    st.markdown('<div class="ri-nav-footer">● SYNTHETIC DATA DEMO<br><span>Retail intelligence · Portfolio edition</span></div>', unsafe_allow_html=True)
+page = ('◈  Executive Intelligence' if st.session_state.ri_page == 'Executive Intelligence'
+        else st.session_state.ri_page)
+
 if page.startswith('◈'):
 
     render_executive(scored, quality, findings)
