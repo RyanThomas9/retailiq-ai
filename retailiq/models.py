@@ -32,4 +32,8 @@ def forecast(df, test_days=90):
     test['expected'] = np.maximum(0, model.predict(test[FEATURES]))
     wape = 100 * np.abs(test.sales - test.expected).sum() / max(test.sales.abs().sum(), 1)
     bias = 100 * (test.expected - test.sales).sum() / max(test.sales.abs().sum(), 1)
-    return test, model, {'wape': wape, 'bias': bias, 'cutoff': cutoff.date(), 'train_rows': len(train)}
+    # Score full feature-ready history for long-window descriptive comparisons.
+    # These are retrospective fitted values before cutoff, not out-of-sample forecasts.
+    scored = d[d.lag_avg_28.notna()].copy()
+    scored['expected'] = np.maximum(0, model.predict(scored[FEATURES]))
+    return scored, model, {'wape': wape, 'bias': bias, 'cutoff': cutoff.date(), 'train_rows': len(train)}
