@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 from retailiq.executive import render_executive, render_macro
 from retailiq.theme import apply_theme
+from retailiq.weather import render_weather
 from retailiq.data import generate
 from retailiq.models import forecast
 from retailiq.discovery import discover
@@ -24,7 +25,7 @@ with st.spinner('Preparing synthetic retail intelligence...'):
 
 with st.sidebar:
     st.markdown('<div class="ri-brand">◈ RetailIQ <span>AI</span></div><div class="ri-sidebar-caption">RETAIL INTELLIGENCE PLATFORM</div>', unsafe_allow_html=True)
-    page = st.radio('Navigate', ['◈  Executive Intelligence', '▥  Sales Intelligence', '↗  Marketing Intelligence', '♙  Customer Intelligence', '◫  Merchandise Intelligence', '▦  Store Intelligence', '◎  Macro Intelligence', '◇  Testing Intelligence', '◷  Model Performance'], label_visibility='collapsed')
+    page = st.radio('Navigate', ['◈  Executive Intelligence', '▥  Sales Intelligence', '↗  Marketing Intelligence', '♙  Customer Intelligence', '◫  Merchandise Intelligence', '▦  Store Intelligence', '☁  Weather Intelligence', '◎  Macro Intelligence', '◇  Testing Intelligence', '◷  Model Performance'], label_visibility='collapsed')
     st.divider()
     st.caption('●  SYNTHETIC DATA DEMO')
     st.caption('Model-driven insights · Public economic data')
@@ -32,7 +33,7 @@ if page.startswith('◈'):
 
     render_executive(scored, quality, findings)
 else:
-    sections = ['Sales Intelligence', 'Marketing Intelligence', 'Customer Intelligence', 'Merchandise Intelligence', 'Store Intelligence', 'Macro Intelligence', 'Testing Intelligence', 'Model Performance']
+    sections = ['Sales Intelligence', 'Marketing Intelligence', 'Customer Intelligence', 'Merchandise Intelligence', 'Store Intelligence', 'Weather Intelligence', 'Macro Intelligence', 'Testing Intelligence', 'Model Performance']
     chosen = next((x for x in sections if x in page), sections[0])
     tabs = st.tabs([chosen])
     # Each navigation item has its own page; reuse the existing section implementations below.
@@ -40,7 +41,7 @@ else:
     class _HiddenTab:
         def __enter__(self): return None
         def __exit__(self, *args): return False
-    tabs = [tabs[0] if i == section else _HiddenTab() for i in range(8)]
+    tabs = [tabs[0] if i == section else _HiddenTab() for i in range(len(sections))]
     if section == 0:
         st.markdown('#### Top financial discoveries')
         if findings.empty:
@@ -73,8 +74,10 @@ else:
         stores['conversion'] = 100 * stores.orders / stores.traffic.replace(0, np.nan)
         st.dataframe(stores.sort_values('sales', ascending=False).head(25), hide_index=True, use_container_width=True)
     if section == 5:
-        render_macro()
+        render_weather(scored)
     if section == 6:
+        render_macro()
+    if section == 7:
         st.markdown('#### Testing Intelligence')
         st.write('Design and analyze a simple hypothetical store experiment.')
         x, y = st.columns(2)
@@ -87,7 +90,7 @@ else:
         lift = difference_in_differences(tb, ta, cb, ca)
         st.metric('Difference-in-differences estimate', f'${lift:+,.0f}')
         st.caption('Illustrative point estimate only. Requires pre-trend validation, independent units, uncertainty intervals, and design assumptions before causal interpretation.')
-    if section == 7:
+    if section == 8:
         st.markdown('#### Historical holdout validation')
         st.write(f'Trained on {quality["train_rows"]:,} synthetic store-days before {quality["cutoff"]}. Tested on the last 90 days.')
         st.metric('WAPE', f'{quality["wape"]:.2f}%')
