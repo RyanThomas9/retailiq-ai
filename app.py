@@ -8,6 +8,7 @@ from retailiq.weather import render_weather
 from retailiq.data import generate
 from retailiq.models import forecast
 from retailiq.discovery import discover
+from retailiq.discovery_v2 import discover_v2
 from retailiq.testing import difference_in_differences, randomized_test
 
 st.set_page_config(page_title='RetailIQ AI | Executive Intelligence', page_icon='✦', layout='wide', initial_sidebar_state='expanded')
@@ -17,7 +18,7 @@ apply_theme()
 def prepare():
     data = generate()
     scored, model, quality = forecast(data)
-    findings = discover(scored)
+    findings = discover_v2(data)
     return data, scored, quality, findings
 
 with st.spinner('Preparing synthetic retail intelligence...'):
