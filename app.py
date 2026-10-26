@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-from retailiq.executive import render_executive, render_macro
+from retailiq.executive_v4 import render_executive, render_macro
 from retailiq.theme import apply_theme
 from retailiq.weather import render_weather
 from retailiq.data import generate
