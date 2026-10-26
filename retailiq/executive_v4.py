@@ -108,15 +108,20 @@ def render_executive(scored, quality, findings):
     .ri-kpi .ri-kpi-value {color:#F7F9FF}
     .ri-kpi .ri-kpi-bottom.positive {color:#34D399!important;font-weight:700}
     .ri-kpi .ri-kpi-bottom.negative {color:#FB7185!important;font-weight:700}
-    .ri-discovery {margin:13px 0 18px!important;padding:23px 26px!important;}
-    .ri-discovery.positive {border-left:4px solid #34D399!important}
-    .ri-discovery.negative {border-left:4px solid #FB7185!important}
-    .ri-discovery.positive .ri-discovery-impact,.ri-discovery.positive .ri-number {color:#34D399!important}
-    .ri-discovery.negative .ri-discovery-impact,.ri-discovery.negative .ri-number {color:#FB7185!important}
-    .ri-discovery-heading {font-size:1.27rem!important;line-height:1.4!important}
-    .ri-discovery-action {border-left:3px solid #FACC15;color:#FFE59B!important}
-    .ri-discovery-evidence {color:#C6B4F3;font-size:.85rem;margin:10px 0}
-    .ri-discovery-foot {font-size:.75rem;color:#9AAAC3;margin-top:12px}
+    /* Preserve readable sizes: previous duplicate rules were overriding these. */
+    .ri-discovery.positive {border-left:5px solid #34D399!important;}
+    .ri-discovery.negative {border-left:5px solid #FB7185!important;}
+    .ri-discovery.positive .ri-discovery-impact,.ri-discovery.positive .ri-number {color:#34D399!important;}
+    .ri-discovery.negative .ri-discovery-impact,.ri-discovery.negative .ri-number {color:#FB7185!important;}
+    .ri-discovery .ri-discovery-heading {font-size:clamp(1.45rem,2vw,1.95rem)!important;line-height:1.28!important;font-weight:850!important;margin:12px 0!important;color:#FAF8FF!important;}
+    .ri-discovery .ri-discovery-impact {font-size:clamp(2.3rem,3vw,3.15rem)!important;font-weight:850!important;letter-spacing:-.035em!important;}
+    .ri-discovery .ri-discovery-impact small {font-size:.9rem!important;font-weight:500!important;color:#B6A8C9!important;letter-spacing:normal!important;}
+    .ri-discovery .ri-discovery-evidence {color:#D7C6F2!important;font-size:1rem!important;margin:13px 0!important;}
+    .ri-discovery .ri-discovery-action {background:#332442!important;border-left:4px solid #FACC15!important;color:#FFE59B!important;font-size:1rem!important;padding:15px 18px!important;margin-top:16px!important;}
+    .ri-discovery .ri-discovery-foot {font-size:.82rem!important;color:#AFA1C5!important;margin-top:14px!important;}
+    .ri-discovery .ri-discovery-tags .ri-status.good {background:#047857!important;color:#ECFDF5!important;border-color:#10B981!important;}
+    .ri-discovery .ri-discovery-tags .ri-status.bad {background:#BE185D!important;color:#FFF1F2!important;border-color:#FB7185!important;}
+    .ri-discovery .ri-discovery-tags .ri-status {font-size:.87rem!important;padding:8px 15px!important;letter-spacing:.035em!important;}
     </style>""", unsafe_allow_html=True)
     if findings.empty:
         st.info('No qualifying discoveries in the latest synthetic data.')
