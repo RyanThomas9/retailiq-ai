@@ -90,6 +90,21 @@ def render_executive(scored, quality, findings):
     st.markdown('<div class="ri-section">✦ &nbsp; Top AI Discoveries Found Yesterday</div>', unsafe_allow_html=True)
     st.caption('Most recent available model run · These are exploratory store-group patterns, not confirmed causal findings. Daily scheduling is not yet enabled.')
     st.markdown("""<style>
+    /* Discovery cards: deliberate, legible semantic badge hierarchy */
+    .ri-discovery {padding:27px 29px!important; margin:16px 0 20px!important; border-radius:16px!important;}
+    .ri-discovery-tags {align-items:center!important;gap:9px!important;margin-bottom:18px!important;}
+    .ri-discovery-tags span {display:inline-flex;align-items:center;min-height:29px;padding:6px 12px!important;border-radius:999px!important;font-size:.78rem!important;font-weight:800!important;letter-spacing:.025em!important;line-height:1.2!important;}
+    .ri-discovery-tags .ri-rank {background:transparent!important;color:#F8FAFC!important;font-size:1rem!important;padding-left:0!important;padding-right:4px!important;}
+    .ri-discovery-tags .ri-status.good {background:#064E3B!important;color:#6EE7B7!important;border:1px solid #10B981!important;}
+    .ri-discovery-tags .ri-status.bad {background:#5B2037!important;color:#FFB0C1!important;border:1px solid #FB7185!important;}
+    .ri-discovery-tags .ri-trend {background:#35204F!important;color:#E9D5FF!important;border:1px solid #8555C6!important;}
+    .ri-discovery-tags .ri-count {background:#283146!important;color:#E2E8F0!important;border:1px solid #56657F!important;}
+    .ri-discovery-tags .ri-exploratory {background:transparent!important;color:#D8B4FE!important;border:1px solid #A855F7!important;}
+    .ri-discovery-heading {font-size:clamp(1.35rem,1.7vw,1.75rem)!important;font-weight:800!important;line-height:1.35!important;letter-spacing:-.02em!important;}
+    .ri-discovery-impact {font-size:clamp(2.15rem,2.7vw,2.8rem)!important;line-height:1.15!important;margin:14px 0!important;}
+    .ri-discovery-evidence {font-size:.96rem!important;line-height:1.6!important;}
+    .ri-discovery-action {padding:14px 17px!important;font-size:.94rem!important;line-height:1.55!important;border-left:4px solid #FACC15!important;}
+    .ri-discovery-foot {font-size:.8rem!important;line-height:1.5!important;}
     .ri-kpi .ri-kpi-value {color:#F7F9FF}
     .ri-kpi .ri-kpi-bottom.positive {color:#34D399!important;font-weight:700}
     .ri-kpi .ri-kpi-bottom.negative {color:#FB7185!important;font-weight:700}
@@ -99,8 +114,6 @@ def render_executive(scored, quality, findings):
     .ri-discovery.positive .ri-discovery-impact,.ri-discovery.positive .ri-number {color:#34D399!important}
     .ri-discovery.negative .ri-discovery-impact,.ri-discovery.negative .ri-number {color:#FB7185!important}
     .ri-discovery-heading {font-size:1.27rem!important;line-height:1.4!important}
-    .ri-discovery-tags span:first-child {background:#4A295C;color:#EBD7FF}
-    .ri-discovery-tags span:last-child {border:1px solid #7B4DB0;background:transparent}
     .ri-discovery-action {border-left:3px solid #FACC15;color:#FFE59B!important}
     .ri-discovery-evidence {color:#C6B4F3;font-size:.85rem;margin:10px 0}
     .ri-discovery-foot {font-size:.75rem;color:#9AAAC3;margin-top:12px}
@@ -119,7 +132,7 @@ def render_executive(scored, quality, findings):
             stores = int(row.stores)
             breadth = float(row.breadth)
             st.markdown(f'''<div class="ri-discovery {color}">
-                <div class="ri-discovery-tags"><span>#{rank} · {"POSITIVE" if positive else "NEGATIVE"} DISCOVERY</span><span>28-DAY PATTERN</span><span>{stores} STORES</span><span>EXPLORATORY</span></div>
+                <div class="ri-discovery-tags"><span class="ri-rank">#{rank}</span><span class="ri-status {'good' if positive else 'bad'}">{'OUTPERFORMING' if positive else 'UNDERPERFORMING'}</span><span class="ri-trend">28-DAY PATTERN</span><span class="ri-count">{stores} STORES</span><span class="ri-exploratory">EXPLORATORY</span></div>
                 <div class="ri-discovery-heading">{group} stores are {direction} their brand-adjusted benchmark</div>
                 <div class="ri-discovery-impact">{impact} <small>brand-relative deviation over the analysis window</small></div>
                 <div class="ri-discovery-evidence">Relative performance: <strong class="ri-number">{relative_pct}</strong> · Stores sharing the direction: {breadth:.0f}%</div>
