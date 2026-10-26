@@ -88,7 +88,7 @@ def render_executive(scored, quality, findings):
                 <span class="ri-chip {tone}">{pct(m['gap_pct'])} vs expected</span>
                 <div class="ri-kpi-bottom {'positive' if np.isfinite(m['yoy_pct']) and m['yoy_pct'] >= 0 else 'negative' if np.isfinite(m['yoy_pct']) else ''}">YoY {pct(m['yoy_pct'])}</div></div>''', unsafe_allow_html=True)
     st.markdown('<div class="ri-section">✦ &nbsp; Top AI Discoveries Found Yesterday</div>', unsafe_allow_html=True)
-    st.caption('Most recent available model run · These are exploratory store-group patterns, not confirmed causal findings. Daily scheduling is not yet enabled.')
+    st.caption('Latest synthetic-data analysis · Peer-adjusted year-over-year comparisons; daily scheduling and discovery memory are not yet enabled.')
     st.markdown("""<style>
     /* Discovery cards: deliberate, legible semantic badge hierarchy */
     .ri-discovery {padding:27px 29px!important; margin:16px 0 20px!important; border-radius:16px!important;}
@@ -136,13 +136,17 @@ def render_executive(scored, quality, findings):
             relative_pct = pct(float(row.relative_pct))
             stores = int(row.stores)
             breadth = float(row.breadth)
+            trend_label = escape(str(row.trend).upper()) if row.trend != 'Insufficient trend history' else 'TREND NOT ESTABLISHED'
+            evidence_label = escape(str(row.confidence).upper())
+            yoy_label = f'Group YoY {pct(float(row.group_yoy))} · Peer YoY {pct(float(row.peer_yoy))}'
+            persist_label = f' · Same direction in {float(row.persistence_pct):.0f}% of weeks' if np.isfinite(row.persistence_pct) else ''
             st.markdown(f'''<div class="ri-discovery {color}">
-                <div class="ri-discovery-tags"><span class="ri-rank">#{rank}</span><span class="ri-status {'good' if positive else 'bad'}">{'OUTPERFORMING' if positive else 'UNDERPERFORMING'}</span><span class="ri-trend">28-DAY PATTERN</span><span class="ri-count">{stores} STORES</span><span class="ri-exploratory">EXPLORATORY</span></div>
-                <div class="ri-discovery-heading">{group} stores are {direction} their brand-adjusted benchmark</div>
-                <div class="ri-discovery-impact">{impact} <small>brand-relative deviation over the analysis window</small></div>
-                <div class="ri-discovery-evidence">Relative performance: <strong class="ri-number">{relative_pct}</strong> · Stores sharing the direction: {breadth:.0f}%</div>
+                <div class="ri-discovery-tags"><span class="ri-rank">#{rank}</span><span class="ri-status {'good' if positive else 'bad'}">{'OUTPERFORMING' if positive else 'UNDERPERFORMING'}</span><span class="ri-trend">{escape(str(row.period).upper())}</span><span class="ri-trend">{trend_label}</span><span class="ri-count">{stores} STORES</span><span class="ri-exploratory">{evidence_label}</span></div>
+                <div class="ri-discovery-heading">{group} stores are {direction} comparable stores on YoY growth</div>
+                <div class="ri-discovery-impact">{impact} <small>versus growing at the peer rate (descriptive)</small></div>
+                <div class="ri-discovery-evidence">{yoy_label} · Growth difference <strong class="ri-number">{relative_pct} pts</strong> · {breadth:.0f}% of stores align{persist_label}</div>
                 <div class="ri-discovery-action"><strong>What to check:</strong> Compare traffic, conversion, order size, product availability and staffing coverage with comparable stores.</div>
-                <div class="ri-discovery-foot">Exploratory store-group finding · Descriptive association, not a confirmed causal or incremental sales impact.</div>
+                <div class="ri-discovery-foot">Store-level Welch test, FDR-adjusted across candidate groups and periods · q={float(row.q_value):.3f} · Descriptive peer comparison, not a causal sales estimate.</div>
             </div>''', unsafe_allow_html=True)
         if len(findings) > 3:
             with st.expander('View additional discoveries'):
