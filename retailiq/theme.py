@@ -44,6 +44,26 @@ hr {border-color:#2D3950;}
 .ri-brand span {color:#B49AFF;}
 .ri-sidebar-caption {color:#8393AC; font-size:.72rem; letter-spacing:.12em; margin:8px 0 18px;}
 .ri-footnote {font-size:.73rem; color:#8291AA; margin-top:12px;}
+
+.ri-kpi {min-height:155px!important; padding:19px 20px!important;}
+.ri-kpi-bottom {font-size:.75rem; color:#9DAEC5; margin-top:12px;}
+.ri-discovery {padding:25px 27px; background:linear-gradient(115deg,#24213A,#182336); border:1px solid #52456D; border-left:4px solid #6DD9B4; border-radius:16px; margin:8px 0 14px;}
+.ri-discovery.negative {border-left-color:#FF8FA3;}
+.ri-discovery-tags {display:flex; flex-wrap:wrap; gap:7px; margin-bottom:15px;}
+.ri-discovery-tags span {font-size:.66rem; font-weight:750; letter-spacing:.07em; padding:5px 8px; border-radius:6px; color:#CDBCF8; background:#38304F;}
+.ri-discovery-heading {font-size:1.2rem; font-weight:750; color:#FAFBFF; line-height:1.4;}
+.ri-discovery-impact {font-size:2rem; font-weight:800; color:#70DFBA; margin:9px 0; letter-spacing:-.04em;}
+.ri-discovery.negative .ri-discovery-impact {color:#FF91A8;}
+.ri-discovery-impact small {font-size:.78rem; font-weight:500; color:#B6C4D7; letter-spacing:0;}
+.ri-discovery-detail {font-size:.86rem; color:#C3D0E1; margin-bottom:12px;}
+.ri-discovery-action {background:#332D44; color:#EADCB6; border-radius:9px; padding:12px 15px; font-size:.85rem;}
+.ri-compact-discovery {display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:15px 18px; background:#1A2535; border:1px solid #304057; border-radius:11px; margin-bottom:9px;}
+.ri-compact-discovery span {color:#F0F4FC; font-weight:650; flex:1; min-width:170px;}
+.ri-compact-discovery strong {color:#C4AFF9;}
+.ri-compact-discovery small {color:#9EADC3; font-size:.75rem;}
+.ri-watch-sub {color:#A6B6CD; font-size:.87rem; margin-top:-6px; margin-bottom:15px;}
+.ri-watch-caption {font-size:.75rem; color:#AAB9CD; margin-bottom:10px;}
+.ri-news-direction {font-size:.75rem; font-weight:700; color:#C5B3FF; margin-bottom:6px;}
 </style>
 """
 

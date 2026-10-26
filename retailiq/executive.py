@@ -71,67 +71,55 @@ def render_macro():
 
 
 def render_executive(scored, quality, findings):
+    # Focused executive home
+    from retailiq.market_watch import render_market_watch
+    from retailiq.weather import forecast_summary
     end = scored.date.max()
-    st.markdown('<div class="ri-eyebrow">◈ &nbsp; RetailIQ / Executive Intelligence</div>', unsafe_allow_html=True)
+    st.markdown('<div class="ri-eyebrow">RETAILIQ AI / EXECUTIVE INTELLIGENCE</div>', unsafe_allow_html=True)
     st.title('Your business, analyzed.')
-    st.markdown(f'<div class="ri-subtitle">A model-driven briefing on retail performance &nbsp;·&nbsp; Synthetic data through {end:%B %d, %Y}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="ri-subtitle">Performance · AI discoveries · Market intelligence &nbsp; | &nbsp; Synthetic data through {end:%b %d, %Y}</div>', unsafe_allow_html=True)
     metrics = {label: period_metrics(scored, days) for label, days in PERIODS.items()}
     cols = st.columns(4, gap='medium')
     for col, (label, m) in zip(cols, metrics.items()):
         tone = 'pos' if m['gap'] >= 0 else 'neg'
-        sign = '↑' if m['gap'] >= 0 else '↓'
         with col:
             st.markdown(f'''<div class="ri-kpi"><div class="ri-kpi-label">{label}</div>
-            <div class="ri-kpi-value">{dollars(m['actual'])}</div>
-            <span class="ri-chip {tone}">{sign} {pct(m['gap_pct'])} vs expected</span>
-            <div class="ri-meta">Expected {dollars(m['expected'])} &nbsp;·&nbsp; Gap {dollars(m['gap'])}<br>
-            Prior {pct(m['prior_pct'])} &nbsp;·&nbsp; YoY {pct(m['yoy_pct'])}</div></div>''', unsafe_allow_html=True)
-    st.markdown('<div class="ri-section">Executive briefing</div>', unsafe_allow_html=True)
-    short = metrics['1 Week']; long = metrics['13 Weeks']
-    gap_desc = 'below' if short['gap'] < 0 else 'above'
-    message = (f'Over the past seven days, sales of <b>{dollars(short["actual"])}</b> were '
-               f'<b>{abs(short["gap_pct"]):.1f}% {gap_desc} model expectations</b> '
-               f'({dollars(abs(short["gap"]))} in absolute variance). '
-               f'The 13-week comparison is <b>{pct(long["gap_pct"])} versus expected</b>.')
-    if not findings.empty:
-        top = findings.iloc[0]
-        message += (f'<br><br><b>Priority investigation:</b> {escape(str(top.group))} stores show '
-                    f'a {dollars(abs(top.relative_dollars))} brand-relative deviation over 28 days '
-                    f'across {top.stores} stores. This is a descriptive pattern, not a causal estimate.')
-    st.markdown(f'<div class="ri-brief"><div class="ri-brief-title">✦ &nbsp; AI-style executive assessment</div><div class="ri-brief-body">{message}</div></div>', unsafe_allow_html=True)
-    left, right = st.columns([1.65, 1], gap='large')
-    with left:
-        st.markdown('<div class="ri-section">Sales trajectory</div>', unsafe_allow_html=True)
-        days = st.segmented_control('View', ['4 Weeks', '13 Weeks', '52 Weeks'], default='13 Weeks', label_visibility='collapsed')
-        n = {'4 Weeks':28, '13 Weeks':91, '52 Weeks':364}[days]
-        trend = scored.loc[scored.date > end - pd.Timedelta(days=n)].groupby('date', as_index=False)[['sales','expected']].sum()
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=trend.date, y=trend.sales, name='Actual', mode='lines', line=dict(color='#B59AFF', width=2.8), fill='tozeroy', fillcolor='rgba(155,124,235,0.07)'))
-        fig.add_trace(go.Scatter(x=trend.date, y=trend.expected, name='Model expected', mode='lines', line=dict(color='#63C5C9', width=2, dash='dot')))
-        fig.update_layout(height=310, margin=dict(l=4,r=8,t=10,b=5), paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',font=dict(color='#A8B6CD',size=11),legend=dict(orientation='h',y=1.16,x=0),hovermode='x unified',xaxis=dict(showgrid=False),yaxis=dict(gridcolor='#263347',tickprefix='$',tickformat='.2s'))
-        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar':False})
-        st.caption('Historical fitted values before the 90-day holdout; do not interpret the full 52-week line as out-of-sample accuracy.')
-    with right:
-        st.markdown('<div class="ri-section">What needs your attention</div>', unsafe_allow_html=True)
-        if findings.empty:
-            st.info('No qualifying store-group findings.')
-        else:
-            for i, r in findings.head(3).reset_index(drop=True).iterrows():
-                st.markdown(f'<div class="ri-finding"><div class="ri-finding-title">{i+1:02d} &nbsp; {escape(str(r.group))} &nbsp;·&nbsp; {pct(r.relative_pct)}</div><div class="ri-finding-meta">{r.stores} stores &nbsp;·&nbsp; {dollars(abs(r.relative_dollars))} brand-relative deviation</div></div>', unsafe_allow_html=True)
-    st.markdown('<div class="ri-section">Weather risk · next 7 days</div>', unsafe_allow_html=True)
-    wx, wx_errors = forecast_summary()
-    if wx.empty:
-        st.info('Public weather forecast unavailable. Weather risk not assessed.')
+                <div class="ri-kpi-value">{dollars(m['actual'])}</div>
+                <span class="ri-chip {tone}">{pct(m['gap_pct'])} vs expected</span>
+                <div class="ri-kpi-bottom">YoY {pct(m['yoy_pct'])}</div></div>''', unsafe_allow_html=True)
+    st.markdown('<div class="ri-section">✦ &nbsp; Top AI Discoveries Found Yesterday</div>', unsafe_allow_html=True)
+    st.caption('Most recent available model run · These are exploratory store-group patterns, not confirmed causal findings. Daily scheduling is not yet enabled.')
+    if findings.empty:
+        st.info('No qualifying discoveries in the latest synthetic data.')
     else:
-        active = wx.loc[wx.severe | wx.snow]
-        if active.empty:
-            st.success('No snow or severe-weather threshold events forecast for the four representative regional cities.')
-        else:
-            regions = ', '.join(sorted(active.region.unique()))
-            st.warning(f'{len(active)} region-days above severe-weather or snow thresholds across {regions}. See Weather Intelligence for details.')
-        if wx_errors:
-            st.caption('Forecast unavailable for: ' + ', '.join(wx_errors))
-    st.caption('Forecasts are for representative cities, not actual stores. Weather-related lost sales are not estimated.')
-    st.markdown('<div class="ri-section">Real-world economic intelligence</div>', unsafe_allow_html=True)
-    render_macro()
-    st.markdown(f'<div class="ri-footnote">Synthetic portfolio demonstration · Holdout WAPE {quality["wape"]:.1f}% over 90 days · External indicators are context, not proven causes of sales changes.</div>', unsafe_allow_html=True)
+        top = findings.iloc[0]
+        positive = float(top.relative_dollars) >= 0
+        label = 'Outperforming peers' if positive else 'Underperforming peers'
+        impact = ('+' if positive else '−') + dollars(abs(float(top.relative_dollars)))
+        color = 'positive' if positive else 'negative'
+        st.markdown(f'''<div class="ri-discovery {color}">
+            <div class="ri-discovery-tags"><span>TOP DISCOVERY</span><span>28-DAY PATTERN</span><span>{int(top.stores)} STORES</span><span>EXPLORATORY</span></div>
+            <div class="ri-discovery-heading">{escape(str(top.group))} stores are {label.lower()}</div>
+            <div class="ri-discovery-impact">{impact} <small>brand-relative deviation</small></div>
+            <div class="ri-discovery-detail">Relative variance {pct(float(top.relative_pct))} · {float(top.breadth):.0f}% of stores share the direction.</div>
+            <div class="ri-discovery-action">What to investigate: Review traffic, conversion, order size, inventory availability and labor coverage in this store group.</div>
+            </div>''', unsafe_allow_html=True)
+        for idx, row in findings.iloc[1:3].iterrows():
+            st.markdown(f'''<div class="ri-compact-discovery"><span>{escape(str(row.group))}</span><strong>{pct(float(row.relative_pct))}</strong><small>{int(row.stores)} stores · {dollars(abs(float(row.relative_dollars)))} relative deviation</small></div>''', unsafe_allow_html=True)
+        if len(findings) > 3:
+            with st.expander('View additional discoveries'):
+                st.dataframe(findings[['group','stores','relative_dollars','relative_pct','breadth']], hide_index=True, use_container_width=True)
+    # Severe weather is elevated only when a public representative-city forecast crosses thresholds.
+    # Failure to retrieve forecasts is not interpreted as 'no risk'.
+    try:
+        wx, errors = forecast_summary()
+        if not wx.empty:
+            events = wx.loc[wx.severe | wx.snow]
+            if not events.empty:
+                places = ', '.join(sorted(events.city.unique()))
+                st.warning(f'Weather alert: snow or severe weather threshold forecast in {places} ({len(events)} city-days). Representative cities only; no store-level sales impact estimated.')
+    except Exception:
+        pass
+    st.divider()
+    render_market_watch()
+    st.markdown(f'<div class="ri-footnote">Synthetic portfolio demonstration · 90-day model holdout WAPE {quality["wape"]:.1f}% · No company data or credentials.</div>', unsafe_allow_html=True)
