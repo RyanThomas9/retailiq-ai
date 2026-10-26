@@ -88,7 +88,7 @@ def render_executive(scored, quality, findings):
                 <span class="ri-chip {tone}">{pct(m['gap_pct'])} vs expected</span>
                 <div class="ri-kpi-bottom {'positive' if np.isfinite(m['yoy_pct']) and m['yoy_pct'] >= 0 else 'negative' if np.isfinite(m['yoy_pct']) else ''}">YoY {pct(m['yoy_pct'])}</div></div>''', unsafe_allow_html=True)
     st.markdown('<div class="ri-section">✦ &nbsp; Top AI Discoveries Found Yesterday</div>', unsafe_allow_html=True)
-    st.caption('Latest synthetic-data analysis · Peer-adjusted year-over-year comparisons; daily scheduling and discovery memory are not yet enabled.')
+    st.caption('Latest available synthetic-data analysis · Five independent periods · Ranked by absolute dollar deviation versus peer growth. Daily scheduling is not yet enabled.')
     st.markdown("""<style>
     /* Discovery cards: deliberate, legible semantic badge hierarchy */
     .ri-discovery {padding:27px 29px!important; margin:16px 0 20px!important; border-radius:16px!important;}
@@ -123,34 +123,55 @@ def render_executive(scored, quality, findings):
     .ri-discovery .ri-discovery-tags .ri-status.bad {background:#BE185D!important;color:#FFF1F2!important;border-color:#FB7185!important;}
     .ri-discovery .ri-discovery-tags .ri-status {font-size:.87rem!important;padding:8px 15px!important;letter-spacing:.035em!important;}
     </style>""", unsafe_allow_html=True)
-    if findings.empty:
-        st.info('No qualifying discoveries in the latest synthetic data.')
-    else:
-        for rank, (_, row) in enumerate(findings.head(3).iterrows(), start=1):
-            delta = float(row.relative_dollars)
-            positive = delta >= 0
-            direction = 'outperforming' if positive else 'underperforming'
-            impact = ('+' if positive else '−') + dollars(abs(delta))
-            color = 'positive' if positive else 'negative'
-            group = escape(str(row.group))
-            relative_pct = pct(float(row.relative_pct))
-            stores = int(row.stores)
-            breadth = float(row.breadth)
-            trend_label = escape(str(row.trend).upper()) if row.trend != 'Insufficient trend history' else 'TREND NOT ESTABLISHED'
-            evidence_label = escape(str(row.confidence).upper())
-            yoy_label = f'Group YoY {pct(float(row.group_yoy))} · Peer YoY {pct(float(row.peer_yoy))}'
-            persist_label = f' · Same direction in {float(row.persistence_pct):.0f}% of weeks' if np.isfinite(row.persistence_pct) else ''
-            st.markdown(f'''<div class="ri-discovery {color}">
-                <div class="ri-discovery-tags"><span class="ri-rank">#{rank}</span><span class="ri-status {'good' if positive else 'bad'}">{'OUTPERFORMING' if positive else 'UNDERPERFORMING'}</span><span class="ri-trend">{escape(str(row.period).upper())}</span><span class="ri-trend">{trend_label}</span><span class="ri-count">{stores} STORES</span><span class="ri-exploratory">{evidence_label}</span></div>
-                <div class="ri-discovery-heading">{group} stores are {direction} comparable stores on YoY growth</div>
-                <div class="ri-discovery-impact">{impact} <small>versus growing at the peer rate (descriptive)</small></div>
-                <div class="ri-discovery-evidence">{yoy_label} · Growth difference <strong class="ri-number">{relative_pct} pts</strong> · {breadth:.0f}% of stores align{persist_label}</div>
-                <div class="ri-discovery-action"><strong>What to check:</strong> Compare traffic, conversion, order size, product availability and staffing coverage with comparable stores.</div>
-                <div class="ri-discovery-foot">Store-level Welch test, FDR-adjusted across candidate groups and periods · q={float(row.q_value):.3f} · Descriptive peer comparison, not a causal sales estimate.</div>
-            </div>''', unsafe_allow_html=True)
-        if len(findings) > 3:
-            with st.expander('View additional discoveries'):
-                st.dataframe(findings[['group','stores','relative_dollars','relative_pct','breadth']], hide_index=True, width='stretch')
+    periods = ['Yesterday','Last 7 Days','Last Month','Last 6 Months','Last Year']
+    tabs = st.tabs(periods)
+    for tab, period in zip(tabs, periods):
+        with tab:
+            subset = findings.loc[findings.period.eq(period)].sort_values('relative_dollars', key=lambda v: v.abs(), ascending=False).head(3)
+            if subset.empty:
+                st.info(f'No qualifying financial deviations found for {period.lower()}.')
+                continue
+            for rank, (_, row) in enumerate(subset.iterrows(), start=1):
+                delta = float(row.relative_dollars)
+                positive = delta >= 0
+                direction = 'outperforming' if positive else 'underperforming'
+                impact = ('+' if positive else '−') + dollars(abs(delta))
+                color = 'positive' if positive else 'negative'
+                group = escape(str(row.group))
+                relative_pct = pct(float(row.relative_pct))
+                stores = int(row.stores)
+                breadth = float(row.breadth)
+                trend_label = escape(str(row.trend).upper()) if row.trend != 'Insufficient trend history' else 'TREND NOT ESTABLISHED'
+                evidence_label = escape(str(row.confidence).upper())
+                yoy_label = f'Group YoY {pct(float(row.group_yoy))} · Peer YoY {pct(float(row.peer_yoy))}'
+                persist_label = f' · Same direction in {float(row.persistence_pct):.0f}% of weeks' if np.isfinite(row.persistence_pct) else ''
+                def _driver(name, value):
+                    if not np.isfinite(value): return ''
+                    shade = '#34D399' if value >= 0 else '#FB7185'
+                    signed = ('+' if value >= 0 else '−') + dollars(abs(value))
+                    return f'<span style="color:{shade};font-weight:750">{escape(name)} {signed}</span>'
+                components = ' · '.join(filter(None, [
+                    _driver('Traffic',row.traffic_dollars),
+                    _driver('Conversion',row.conversion_dollars),
+                    _driver('Order size',row.order_size_dollars)]))
+                lead = str(row.lead_driver)
+                if lead == 'Traffic':
+                    advice = 'Review local demand, store traffic, and acquisition channels; compare visit patterns with peers.'
+                elif lead == 'Conversion':
+                    advice = 'Investigate product availability, staffing coverage, selling effectiveness and conversion by day.'
+                elif lead == 'Order size':
+                    advice = 'Review units per transaction, product mix, discounts, pricing and attachment rates.'
+                else:
+                    advice = 'Investigate traffic, conversion and order size with comparable stores.'
+                st.markdown(f'''<div class="ri-discovery {color}">
+                    <div class="ri-discovery-tags"><span class="ri-rank">#{rank}</span><span class="ri-status {'good' if positive else 'bad'}">{'OUTPERFORMING' if positive else 'UNDERPERFORMING'}</span><span class="ri-trend">{escape(period.upper())}</span><span class="ri-trend">{trend_label}</span><span class="ri-count">{stores} STORES</span><span class="ri-exploratory">{evidence_label}</span></div>
+                    <div class="ri-discovery-heading">{group} stores are {direction} comparable stores on YoY growth</div>
+                    <div class="ri-discovery-impact">{impact} <small>versus growing at the peer rate (descriptive)</small></div>
+                    <div class="ri-discovery-evidence">{yoy_label} · Growth difference <strong class="ri-number">{relative_pct} pts</strong> · {breadth:.0f}% of stores align{persist_label}</div>
+                    <div class="ri-discovery-evidence"><strong>Where the gap came from:</strong> {components or 'Insufficient traffic / order data for decomposition'}</div>
+                    <div class="ri-discovery-action"><strong>What to investigate:</strong> {escape(advice)}</div>
+                    <div class="ri-discovery-foot">Ranked by absolute financial deviation within this period · Welch store-level test · FDR q={float(row.q_value):.3f} · Not a causal lost-sales estimate.</div>
+                </div>''', unsafe_allow_html=True)
     # Severe weather is elevated only when a public representative-city forecast crosses thresholds.
     # Failure to retrieve forecasts is not interpreted as 'no risk'.
     try:
