@@ -7,21 +7,40 @@ import streamlit as st
 import plotly.graph_objects as go
 from html import escape
 from retailiq.weather import forecast_summary
+from retailiq.ecommerce import generate_ecommerce
 
 PERIODS = {'Yesterday': 1, '1 Week': 7, '13 Weeks': 91, '52 Weeks': 364}
 
 
-def period_metrics(scored, days):
+def period_metrics(scored, days, commerce=None):
+    """Total business actual; store model + trailing-online baseline expected.
+
+    Online baseline is descriptive, not a validated e-commerce forecast.
+    """
     end = scored.date.max()
     start = end - pd.Timedelta(days=days - 1)
     current = scored.loc[scored.date.between(start, end)]
-    prev = scored.loc[scored.date.between(start - pd.Timedelta(days=days), start - pd.Timedelta(days=1))]
-    last_year = scored.loc[scored.date.between(start - pd.Timedelta(days=364), end - pd.Timedelta(days=364))]
-    actual, expected = current.sales.sum(), current.expected.sum()
+    store_expected = float(current.expected.sum())
+    if commerce is None:
+        actual = float(current.sales.sum())
+        expected = store_expected
+        sales_daily = scored.groupby('date', as_index=False).sales.sum()
+    else:
+        sales_daily = commerce[['date','total_business_sales']].rename(columns={'total_business_sales':'sales'})
+        current_online = commerce.loc[commerce.date.between(start, end)]
+        actual = float(current.sales.sum() + current_online.ecom_sales.sum())
+        # Exclude current date and the prior week to avoid contemporaneous leakage.
+        online = commerce.sort_values('date').copy()
+        online['online_baseline'] = online.ecom_sales.shift(7).rolling(28, min_periods=7).mean()
+        online['online_baseline'] = online.online_baseline.fillna(online.ecom_sales.shift(7).expanding(min_periods=1).mean())
+        online['online_baseline'] = online.online_baseline.fillna(online.ecom_sales.median())
+        expected = store_expected + float(online.loc[online.date.between(start, end), 'online_baseline'].sum())
+    prev = sales_daily.loc[sales_daily.date.between(start - pd.Timedelta(days=days), start - pd.Timedelta(days=1))]
+    last_year = sales_daily.loc[sales_daily.date.between(start - pd.Timedelta(days=364), end - pd.Timedelta(days=364))]
     return {'actual': actual, 'expected': expected, 'gap': actual-expected,
             'gap_pct': 100*(actual/expected-1) if expected else np.nan,
-            'prior_pct': 100*(actual/prev.sales.sum()-1) if len(prev) and prev.sales.sum() else np.nan,
-            'yoy_pct': 100*(actual/last_year.sales.sum()-1) if len(last_year)==len(current) and last_year.sales.sum() else np.nan,
+            'prior_pct': 100*(actual/prev.sales.sum()-1) if len(prev) == days and prev.sales.sum() else np.nan,
+            'yoy_pct': 100*(actual/last_year.sales.sum()-1) if len(last_year)==days and last_year.sales.sum() else np.nan,
             'rows': len(current)}
 
 
@@ -78,7 +97,8 @@ def render_executive(scored, quality, findings):
     st.markdown('<div class="ri-eyebrow">RETAILIQ AI / EXECUTIVE INTELLIGENCE</div>', unsafe_allow_html=True)
     st.title('Your business, analyzed.')
     st.markdown(f'<div class="ri-subtitle">Performance · AI discoveries · Market intelligence &nbsp; | &nbsp; Synthetic data through {end:%b %d, %Y}</div>', unsafe_allow_html=True)
-    metrics = {label: period_metrics(scored, days) for label, days in PERIODS.items()}
+    commerce = generate_ecommerce(scored)
+    metrics = {label: period_metrics(scored, days, commerce) for label, days in PERIODS.items()}
     cols = st.columns(4, gap='medium')
     for col, (label, m) in zip(cols, metrics.items()):
         tone = 'pos' if m['gap'] >= 0 else 'neg'
@@ -87,6 +107,7 @@ def render_executive(scored, quality, findings):
                 <div class="ri-kpi-value">{dollars(m['actual'])}</div>
                 <span class="ri-chip {tone}">{pct(m['gap_pct'])} vs expected</span>
                 <div class="ri-kpi-bottom {'positive' if np.isfinite(m['yoy_pct']) and m['yoy_pct'] >= 0 else 'negative' if np.isfinite(m['yoy_pct']) else ''}">YoY {pct(m['yoy_pct'])}</div></div>''', unsafe_allow_html=True)
+    st.caption('KPI sales include stores + e-commerce. Expected sales = existing store ML forecast + trailing online baseline (not a validated online forecast). Discoveries below remain store-based.')
     st.markdown('<div class="ri-section">✦ &nbsp; Top AI Discoveries Found Yesterday</div>', unsafe_allow_html=True)
     st.caption('Latest available synthetic-data analysis · Five independent periods · Ranked by absolute dollar deviation versus peer growth. Daily scheduling is not yet enabled.')
     st.markdown("""<style>

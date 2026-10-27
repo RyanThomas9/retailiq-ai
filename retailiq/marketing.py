@@ -10,14 +10,22 @@ import streamlit as st
 from html import escape
 from retailiq.ecommerce import generate_ecommerce
 
+# Exact requested taxonomy. Subchannel shares are conditional on channel spend.
 CHANNELS = {
-    'Paid Search': ('Brand', 'Non-Brand', 'Shopping'),
-    'Paid Social': ('Meta', 'TikTok'),
-    'Display': ('Awareness', 'Retargeting'),
-    'Video': ('YouTube',),
-    'Affiliate': ('Partners',),
-    'Email': ('Lifecycle',),
+    'Paid Search': {'Paid Search- Conversion': 1.0},
+    'Paid Social': {'Paid Social- Awareness': .20, 'Paid Social- Consideration': .15, 'Paid Social- Conversion': .65},
+    'Video': {'Video -Awareness': .70, 'Video -Consideration': .25, 'Video -Conversion': .05},
+    'Display': {'Display-Awareness': .20, 'Display-Consideration': .15, 'Display-Conversion': .65},
+    'Email': {'Email- Conversion': 1.0},
+    'Affiliate': {'Affiliate- Conversion': 1.0},
+    'Linear TV': {'Linear TV- Awareness': 1.0},
 }
+CHANNEL_WEIGHTS = {'Paid Search': .32, 'Paid Social': .23, 'Video': .12,
+                   'Display': .09, 'Email': .04, 'Affiliate': .06, 'Linear TV': .14}
+TARGET_SPEND_SHARE = .05
+assert abs(sum(CHANNEL_WEIGHTS.values()) - 1) < 1e-12
+assert all(abs(sum(parts.values()) - 1) < 1e-12 for parts in CHANNELS.values())
+
 PERIODS = {'Yesterday': 1, 'Last 7 Days': 7, 'Last Month': 28,
            'Last 6 Months': 182, 'Last Year': 364}
 
@@ -31,35 +39,40 @@ def make_marketing(data):
     from retailiq.ecommerce import generate_ecommerce
     daily = generate_ecommerce(data)
     rng = np.random.default_rng(20261027)
-    channel_weight = {'Paid Search': .34, 'Paid Social': .24, 'Display': .12,
-                      'Video': .12, 'Affiliate': .08, 'Email': .10}
     records = []
     for i, r in enumerate(daily.itertuples(index=False)):
-        seasonal = 1 + .12 * np.sin(2*np.pi*i/365.25)
         day_records = []
-        for channel, subchannels in CHANNELS.items():
-            for sub in subchannels:
-                weight = channel_weight[channel] / len(subchannels)
-                spend = max(0, r.total_business_sales * .055 * weight * seasonal * rng.lognormal(0, .11))
-                cpm = {'Paid Search': 20, 'Paid Social': 13, 'Display': 7,
-                       'Video': 11, 'Affiliate': 15, 'Email': 2}[channel] * rng.lognormal(0, .08)
+        # Every day's channel + subchannel spend reconciles to 5% of total sales.
+        # Small stochastic shifts in mix are normalized so total remains anchored.
+        mix = {(channel, sub): CHANNEL_WEIGHTS[channel] * sub_share * rng.lognormal(0, .07)
+               for channel, parts in CHANNELS.items() for sub, sub_share in parts.items()}
+        mix_total = sum(mix.values())
+        for (channel, sub), raw_weight in mix.items():
+            spend = float(r.total_business_sales * TARGET_SPEND_SHARE * raw_weight / mix_total)
+            if channel == 'Linear TV':
+                # Offline awareness delivery is not represented as website clicks.
+                impressions = spend * 1000 / 17.0
+                clicks, sessions = 0, 0
+                weight_tx = 0.0
+            else:
+                cpm = {'Paid Search':20, 'Paid Social':13, 'Display':7,
+                       'Video':11, 'Affiliate':15, 'Email':2}[channel] * rng.lognormal(0, .08)
                 impressions = spend * 1000 / cpm
-                ctr = {'Paid Search': .038, 'Paid Social': .013, 'Display': .004,
-                       'Video': .007, 'Affiliate': .025, 'Email': .055}[channel] * rng.lognormal(0, .09)
+                ctr = {'Paid Search':.038, 'Paid Social':.013, 'Display':.004,
+                       'Video':.007, 'Affiliate':.025, 'Email':.055}[channel] * rng.lognormal(0, .09)
                 clicks = int(round(impressions * ctr))
                 sessions = max(1, int(round(clicks * np.clip(rng.normal(.84, .045), .65, .96))))
-                # Channel attribution weights are independent of reported spend ROI.
                 weight_tx = sessions * {'Paid Search':1.3,'Paid Social':.8,'Display':.5,
                                         'Video':.45,'Affiliate':1.4,'Email':1.65}[channel]
-                day_records.append([r.date,channel,sub,spend,impressions,clicks,sessions,weight_tx])
+            day_records.append([r.date,channel,sub,spend,impressions,clicks,sessions,weight_tx])
         weights = np.array([x[-1] for x in day_records], dtype=float)
         weights /= weights.sum()
-        # GA4 tracks 91-97% of online revenue in this fictional business.
         coverage = float(np.clip(rng.normal(.945, .012), .91, .97))
         tracked_revenue = float(r.ecom_sales * coverage)
-        # Exact allocation: each attributed dollar belongs to one subchannel.
         allocation = tracked_revenue * weights
-        allocation[-1] = tracked_revenue - allocation[:-1].sum()
+        # Put rounding residual on a digital subchannel, never on Linear TV.
+        digital_last = max(k for k, item in enumerate(day_records) if item[1] != "Linear TV")
+        allocation[digital_last] += tracked_revenue - allocation.sum()
         estimated_orders = np.maximum(0, np.rint(r.ecom_orders * coverage * weights).astype(int))
         for j, item in enumerate(day_records):
             records.append((*item[:7], int(estimated_orders[j]), float(allocation[j])))
@@ -164,6 +177,24 @@ def render_marketing(data):
                     <div style="color:#a6a1b7;font-size:12px;margin-top:10px">Exploratory · GA4 attribution proxy · Not incremental revenue or proven financial impact</div>
                     </div>''', unsafe_allow_html=True)
 
+    st.markdown('<div class="ri-section">Marketing investment by channel and subchannel</div>', unsafe_allow_html=True)
+    st.caption('Last 7 days · Subchannel spend sums exactly to channel spend. Linear TV is offline awareness and has no GA4 click attribution.')
+    sub_detail = (current.groupby(['channel','subchannel'], as_index=False)
+                  .agg(spend=('spend','sum'), impressions=('impressions','sum'),
+                       clicks=('clicks','sum'), sessions=('sessions','sum'),
+                       ga4_revenue=('ga4_revenue','sum')))
+    channel_detail = (sub_detail.groupby('channel', as_index=False)
+                      .agg(spend=('spend','sum'), ga4_revenue=('ga4_revenue','sum')))
+    actual_week_spend = float(current.spend.sum())
+    target_week_spend = float(total_sales * TARGET_SPEND_SHARE)
+    assert np.isclose(actual_week_spend, target_week_spend, atol=.01)
+    assert np.isclose(sub_detail.spend.sum(), channel_detail.spend.sum(), atol=.01)
+    st.metric('Marketing spend / total business sales', f'{actual_week_spend / total_sales:.1%}')
+    with st.expander('Channel and subchannel spend reconciliation', expanded=True):
+        st.dataframe(sub_detail.style.format({'spend':'${:,.0f}', 'impressions':'{:,.0f}',
+                         'clicks':'{:,.0f}', 'sessions':'{:,.0f}', 'ga4_revenue':'${:,.0f}'}),
+                     hide_index=True, width='stretch')
+        st.caption(f'Subchannels ${actual_week_spend:,.0f} = channels ${channel_detail.spend.sum():,.0f} = 5% of total business sales ${target_week_spend:,.0f}.')
     st.markdown('<div class="ri-section">Channel performance</div>', unsafe_allow_html=True)
     by_channel = (current.groupby('channel',as_index=False)
                   .agg(spend=('spend','sum'),sessions=('sessions','sum'),
