@@ -1,16 +1,9 @@
-# RetailIQ Discovery V3.1
+# RetailIQ AI: total business sales + marketing taxonomy
 
-Replace only:
-- `retailiq/discovery_v3.py`
-- `retailiq/executive_v4.py`
+Replace `retailiq/executive_v4.py` and `retailiq/marketing.py` in GitHub. Keep your current `retailiq/ecommerce.py` (included here as reference; only upload if missing). No app.py changes.
 
-No change to `app.py`, sidebar, model training, five tabs, or AI Market Watch.
+Executive KPI: total store + e-commerce sales. Expected: existing store forecast + rolling online baseline (not validated online forecast). Store discovery models unchanged.
 
-Changes:
-- $25,000 minimum absolute peer-relative financial deviation applied before ranking and again at display.
-- Positive and negative findings eligible, ranked together by absolute impact within each tab.
-- Headline identifies the largest calculated traffic/conversion/order-size contribution.
-- Recommendations distinguish opportunities to replicate positive drivers from investigations into negative drivers.
-- Descriptive estimates remain explicitly noncausal and retain FDR evidence labels.
+Marketing: 13 requested channel/subchannel combinations; Linear TV offline awareness; 5% of total business sales daily, and therefore 5% weekly for complete weeks. Subchannel sums exactly reconcile to channel totals.
 
-Note: 'Last Month' remains 28 days, 'Last 6 Months' 182 days, and 'Last Year' 364 days, matching V3.
+Spend allocations are synthetic assumptions; no incremental attribution or MMM claims.
