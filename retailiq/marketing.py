@@ -314,7 +314,7 @@ def render_marketing(data):
                                f'cancellation {escape(_money(offset["cancellation"]))} · '
                                f'net change {("+" if positive else "−")}{escape(_money(item["gap"]))}'
                                f'</div>') if offset['flag'] else ''
-                st.markdown(f'''<div style="background:#20172e;border:1px solid #49325f;border-left:4px solid {color};border-radius:13px;padding:22px;margin:14px 0;">
+                card_html = f'''<div style="background:#20172e;border:1px solid #49325f;border-left:4px solid {color};border-radius:13px;padding:22px;margin:14px 0;">
                     <div style="color:{color};font-weight:800;letter-spacing:.08em;font-size:13px">#{i} &nbsp; {status} &nbsp; · &nbsp; {days}-DAY WINDOW</div>
                     <div style="font-size:23px;font-weight:750;color:#f8fafc;margin-top:12px">{escape(title)}</div>
                     <div style="font-size:34px;font-weight:850;color:{color};margin:10px 0">{('+' if positive else '−')}{_money(item['gap'])}</div>
@@ -324,7 +324,11 @@ def render_marketing(data):
                     <div style="color:#cbd5e1;margin-top:10px">{escape(evidence)}</div>
                     <div style="background:#342a43;border-left:3px solid #facc15;color:#fde68a;padding:12px;margin-top:14px;border-radius:6px"><b>What to investigate:</b> {escape(item['recommendation'])}</div>
                     <div style="color:#a6a1b7;font-size:12px;margin-top:10px">Exploratory · Ranked by gross movement for offsetting patterns, otherwise absolute net change · GA4 attributed revenue is not incremental revenue · No causal conclusion</div>
-                    </div>''', unsafe_allow_html=True)
+                    </div>'''
+                # Remove indentation/newlines before passing HTML to Streamlit Markdown.
+                # Otherwise Markdown can treat indented HTML as a literal code block.
+                st.markdown(''.join(line.strip() for line in card_html.splitlines()),
+                            unsafe_allow_html=True)
 
     st.markdown('<div class="ri-section">Marketing investment by channel and subchannel</div>', unsafe_allow_html=True)
     st.caption('Last 7 days · Subchannel spend sums exactly to channel spend. Linear TV is offline awareness and has no GA4 click attribution.')
