@@ -9,6 +9,7 @@ from retailiq.data import generate
 from retailiq.models import forecast
 from retailiq.discovery import discover
 from retailiq.discovery_v3 import discover_v3
+from retailiq.marketing import render_marketing
 from retailiq.testing import difference_in_differences, randomized_test
 
 st.set_page_config(page_title='RetailIQ AI | Executive Intelligence', page_icon='✦', layout='wide', initial_sidebar_state='expanded')
@@ -100,8 +101,7 @@ else:
             st.plotly_chart(px.line(trend, x='date', y=['sales','expected'], title='Actual vs expected sales'), use_container_width=True)
             st.caption('Brand-relative dollars are descriptive deviations, not incremental lost sales.')
     if section == 1:
-        st.markdown('#### Marketing Intelligence')
-        st.write('Next module: synthetic marketing mix data, channel response curves, and constrained spend optimization. No fabricated ROI estimates are shown.')
+        render_marketing(data)
     if section == 2:
         st.markdown('#### Customer Intelligence')
         st.write('Next module: synthetic customer cohorts, churn risk, and lifetime value.')
