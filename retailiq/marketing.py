@@ -156,10 +156,48 @@ def _diagnosis(a, b, driver, gap):
             'Review discounting, product mix, basket composition and high-value product availability.')
 
 
-def find_marketing_discoveries(df, days=7, minimum=0):
-    """Top absolute GA4 revenue movements, with no minimum-dollar exclusion.
+def _offsetting_signal(contributions, net_gap):
+    """Detect opposing Shapley components that mask a material gross movement.
 
-    Revenue changes are descriptive and do not estimate incremental marketing impact.
+    Cancellation is the smaller of total positive and total negative components.
+    The gross driver movement is the sum of absolute component contributions.
+    Values are descriptive GA4 attributed revenue, not incremental sales.
+    """
+    if not contributions:
+        return {'flag': False, 'cancellation': 0.0, 'gross': abs(net_gap),
+                'opposing': [], 'ratio': 0.0}
+    positives = sum(max(v, 0.0) for v in contributions.values())
+    negatives = sum(max(-v, 0.0) for v in contributions.values())
+    cancellation = min(positives, negatives)
+    gross = positives + negatives
+    # Flag substantial opposing contributions, not tiny rounding artifacts.
+    flag = (cancellation >= 1000 and gross >= 5000 and
+            cancellation / gross >= 0.20 and gross >= 1.5 * max(abs(net_gap), 1))
+    opposing = sorted(contributions.items(), key=lambda x: abs(x[1]), reverse=True)[:2]
+    return {'flag': flag, 'cancellation': cancellation, 'gross': gross,
+            'opposing': opposing, 'ratio': cancellation / gross if gross else 0.0}
+
+
+def _offsetting_recommendation(a, b, contributions):
+    """Investigate both sides of an offsetting pattern, without causal claims."""
+    negatives = [k for k,v in contributions.items() if v < 0]
+    positives = [k for k,v in contributions.items() if v > 0]
+    labels = {'sessions':'traffic', 'cvr':'conversion', 'aov':'order value'}
+    weak = ', '.join(labels[k] for k in negatives)
+    strong = ', '.join(labels[k] for k in positives)
+    cpc = _pct_change(a['cpc'], b['cpc'])
+    clicks = _pct_change(a['clicks'], b['clicks'])
+    delivery = (' Check auction costs and targeting: CPC rose while clicks declined.'
+                if np.isfinite(cpc) and cpc > 5 and np.isfinite(clicks) and clicks < -5 else '')
+    return (f'Investigate weaker {weak} while validating the improvement in {strong}. '
+            'Segment by campaign, device, audience and landing page before reallocating budget.' + delivery)
+
+
+def find_marketing_discoveries(df, days=7, minimum=0):
+    """Rank the largest net changes OR masked offsetting movements.
+
+    No minimum-dollar exclusion. Revenue movements are descriptive GA4
+    attribution, not incremental marketing contribution.
     """
     end = df.date.max()
     cur = df[df.date.between(end-pd.Timedelta(days=days-1), end)]
@@ -183,12 +221,16 @@ def find_marketing_discoveries(df, days=7, minimum=0):
         else:
             driver = max(contributions, key=lambda k: abs(contributions[k]))
             driver_amount = contributions[driver]
+        offset = _offsetting_signal(contributions, gap)
+        score = max(abs(gap), offset['gross'] if offset['flag'] else 0.0)
         rows.append({'channel': channel, 'subchannel': sub, 'gap': gap,
+                     'offsetting': offset, 'ranking_score': score,
                      'current': a, 'prior': b, 'driver': driver,
                      'driver_amount': driver_amount, 'contributions': contributions,
-                     'recommendation': _diagnosis(a, b, driver, gap) if contributions else
+                     'recommendation': (_offsetting_recommendation(a, b, contributions)
+                                        if offset['flag'] else _diagnosis(a, b, driver, gap)) if contributions else
                      'Investigate transaction and revenue tracking before interpreting this change.'})
-    return sorted(rows, key=lambda x: abs(x['gap']), reverse=True)[:3]
+    return sorted(rows, key=lambda x: (x['ranking_score'], abs(x['gap'])), reverse=True)[:3]
 
 
 def _fmt_delta(x):
@@ -227,7 +269,7 @@ def render_marketing(data):
 
     st.caption(f'Store sales (existing): {_money(store_sales)} · Online sales: {_money(ecom_sales)} · GA4 coverage of online revenue: {m["ga4_revenue"]/ecom_sales:.1%}. GA4 revenue is a subset of online revenue, not additive.')
     st.markdown('<div class="ri-section">✦ &nbsp; Top Marketing AI Discoveries</div>', unsafe_allow_html=True)
-    st.caption('Top three absolute GA4 attributed-revenue changes versus the immediately preceding equal-length period. No minimum-dollar threshold. Descriptive, not incremental.')
+    st.caption('Top three largest net revenue changes or significant offsetting drivers versus the preceding equal-length period. No minimum-dollar threshold. Descriptive, not incremental.')
     tabs = st.tabs(list(PERIODS))
     for tab, (label, days) in zip(tabs, PERIODS.items()):
         with tab:
@@ -237,12 +279,17 @@ def render_marketing(data):
             for i, item in enumerate(discoveries, 1):
                 positive = item['gap'] >= 0
                 color = '#34D399' if positive else '#FB7185'
-                status = 'GA4 REVENUE UP' if positive else 'GA4 REVENUE DOWN'
+                offset = item['offsetting']
+                status = ('OFFSETTING DRIVERS' if offset['flag'] else
+                          ('GA4 REVENUE UP' if positive else 'GA4 REVENUE DOWN'))
                 driver = item['driver']
                 driver_label = {'sessions':'Traffic', 'cvr':'Conversion', 'aov':'Order value'}.get(driver, 'Unclassified')
                 driver_amount = item['driver_amount']
                 if np.isfinite(driver_amount):
-                    title = f'{driver_label} is the largest contributor to the {item["channel"]} / {item["subchannel"]} revenue change'
+                    if offset['flag']:
+                        title = f'Opposing traffic, conversion or order-value movements mask changes in {item["subchannel"]}'
+                    else:
+                        title = f'{driver_label} is the largest contributor to the {item["channel"]} / {item["subchannel"]} revenue change'
                     component = (('+' if driver_amount >= 0 else '−') + _money(driver_amount))
                 else:
                     title = f'{item["channel"]} / {item["subchannel"]}: investigate the GA4 revenue change'
@@ -262,15 +309,21 @@ def render_marketing(data):
                                                            ('Order value',contrib['aov'])])
                 else:
                     parts = 'Driver decomposition unavailable due to missing/zero transaction values.'
+                offset_line = (f'<div style="color:#facc15;margin-top:10px">'
+                               f'Offsetting movements: gross driver change {escape(_money(offset["gross"]))} · '
+                               f'cancellation {escape(_money(offset["cancellation"]))} · '
+                               f'net change {("+" if positive else "−")}{escape(_money(item["gap"]))}'
+                               f'</div>') if offset['flag'] else ''
                 st.markdown(f'''<div style="background:#20172e;border:1px solid #49325f;border-left:4px solid {color};border-radius:13px;padding:22px;margin:14px 0;">
                     <div style="color:{color};font-weight:800;letter-spacing:.08em;font-size:13px">#{i} &nbsp; {status} &nbsp; · &nbsp; {days}-DAY WINDOW</div>
                     <div style="font-size:23px;font-weight:750;color:#f8fafc;margin-top:12px">{escape(title)}</div>
                     <div style="font-size:34px;font-weight:850;color:{color};margin:10px 0">{('+' if positive else '−')}{_money(item['gap'])}</div>
                     <div style="color:#cbd5e1">GA4 attributed-revenue change vs preceding period · Largest calculated component: {escape(driver_label)} {escape(component)}</div>
                     <div style="color:#c4b5fd;margin-top:10px">{escape(parts)}</div>
+                    {offset_line}
                     <div style="color:#cbd5e1;margin-top:10px">{escape(evidence)}</div>
                     <div style="background:#342a43;border-left:3px solid #facc15;color:#fde68a;padding:12px;margin-top:14px;border-radius:6px"><b>What to investigate:</b> {escape(item['recommendation'])}</div>
-                    <div style="color:#a6a1b7;font-size:12px;margin-top:10px">Exploratory · GA4 attributed revenue is not incremental revenue · No causal conclusion</div>
+                    <div style="color:#a6a1b7;font-size:12px;margin-top:10px">Exploratory · Ranked by gross movement for offsetting patterns, otherwise absolute net change · GA4 attributed revenue is not incremental revenue · No causal conclusion</div>
                     </div>''', unsafe_allow_html=True)
 
     st.markdown('<div class="ri-section">Marketing investment by channel and subchannel</div>', unsafe_allow_html=True)
