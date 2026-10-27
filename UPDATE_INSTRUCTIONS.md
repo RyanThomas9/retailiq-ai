@@ -1,9 +1,15 @@
-# RetailIQ AI: total business sales + marketing taxonomy
+# RetailIQ AI - Marketing Intelligence V3.1
 
-Replace `retailiq/executive_v4.py` and `retailiq/marketing.py` in GitHub. Keep your current `retailiq/ecommerce.py` (included here as reference; only upload if missing). No app.py changes.
+## Install
+Replace only `retailiq/marketing.py` in your GitHub repository with the included file. Do not upload `__pycache__` or `patch.py`.
 
-Executive KPI: total store + e-commerce sales. Expected: existing store forecast + rolling online baseline (not validated online forecast). Store discovery models unchanged.
+## Changes
+- Preserve the existing five tabs, KPI cards, channel taxonomy, and 5% spend reconciliation.
+- Discover significant opposing GA4 revenue components even when net revenue changes are small.
+- Rank by absolute net GA4 revenue movement, or gross driver movement when substantial cancellation exists.
+- Show an explicit OFFSETTING DRIVERS label, gross movement, canceled movement, and net movement.
+- Tailor the investigation to both declining and improving components.
+- No minimum financial threshold and no incremental ROI claims.
 
-Marketing: 13 requested channel/subchannel combinations; Linear TV offline awareness; 5% of total business sales daily, and therefore 5% weekly for complete weeks. Subchannel sums exactly reconcile to channel totals.
-
-Spend allocations are synthetic assumptions; no incremental attribution or MMM claims.
+## Note
+The $1,000 cancellation and $5,000 gross movement gates suppress tiny numeric fluctuations only; they are not a $25K discovery threshold. No results are fabricated when a period lacks enough comparable history.
