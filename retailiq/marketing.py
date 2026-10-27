@@ -81,19 +81,86 @@ def make_marketing(data):
 
 
 def _metrics(df):
-    spend = df.spend.sum()
-    clicks = df.clicks.sum()
-    impressions = df.impressions.sum()
-    sessions = df.sessions.sum()
-    tx = df.transactions.sum()
-    return {'spend': spend, 'sessions': sessions, 'ga4_revenue': df.ga4_revenue.sum(),
-            'ctr': 100 * clicks / max(impressions, 1),
-            'cpc': spend / max(clicks, 1),
-            'cvr': 100 * tx / max(sessions, 1)}
+    spend = float(df.spend.sum())
+    clicks = float(df.clicks.sum())
+    impressions = float(df.impressions.sum())
+    sessions = float(df.sessions.sum())
+    tx = float(df.transactions.sum())
+    revenue = float(df.ga4_revenue.sum())
+    return {'spend': spend, 'impressions': impressions, 'clicks': clicks,
+            'sessions': sessions, 'transactions': tx, 'ga4_revenue': revenue,
+            'ctr': clicks / impressions if impressions else np.nan,
+            'cpm': 1000 * spend / impressions if impressions else np.nan,
+            'cpc': spend / clicks if clicks else np.nan,
+            'click_to_session': sessions / clicks if clicks else np.nan,
+            'cvr': tx / sessions if sessions else np.nan,
+            'aov': revenue / tx if tx else np.nan,
+            'rps': revenue / sessions if sessions else np.nan}
 
 
-def find_marketing_discoveries(df, days=7, minimum=25000):
-    """Rank *descriptive* GA4-revenue changes, not incremental marketing impacts."""
+def _pct_change(new, old):
+    if old is None or not np.isfinite(old) or old <= 0 or not np.isfinite(new):
+        return np.nan
+    return 100 * (new / old - 1)
+
+
+def _contributions(a, b):
+    """Exact symmetric Shapley decomposition of SESSIONS x CVR x AOV.
+
+    A zero-transaction period has undefined AOV; avoid inventing a breakdown.
+    """
+    import itertools
+    names = ('sessions', 'cvr', 'aov')
+    if any(not np.isfinite(a[k]) or not np.isfinite(b[k]) for k in names):
+        return None
+    effects = {k: 0.0 for k in names}
+    for ordering in itertools.permutations(names):
+        values = {k: b[k] for k in names}
+        for k in ordering:
+            before = np.prod(list(values.values()))
+            values[k] = a[k]
+            after = np.prod(list(values.values()))
+            effects[k] += (after - before) / 6.0
+    # The identity is exact to floating point precision when revenue = sessions*cvr*aov.
+    assert np.isclose(sum(effects.values()), a['ga4_revenue'] - b['ga4_revenue'], atol=0.01)
+    return effects
+
+
+def _diagnosis(a, b, driver, gap):
+    """Evidence-based investigation, not a causal attribution."""
+    improving = gap >= 0
+    spend = _pct_change(a['spend'], b['spend'])
+    impressions = _pct_change(a['impressions'], b['impressions'])
+    clicks = _pct_change(a['clicks'], b['clicks'])
+    cpc = _pct_change(a['cpc'], b['cpc'])
+    ctr = _pct_change(a['ctr'], b['ctr'])
+    if driver == 'sessions':
+        if np.isfinite(cpc) and cpc > 10 and np.isfinite(clicks) and clicks < -5:
+            return ('Traffic declined as CPC increased; review auction pressure, targeting, '
+                    'keyword/creative mix, and landing-page delivery. Validate in platform reports.')
+        if np.isfinite(impressions) and impressions < -5:
+            return ('Reach declined; check budgets, campaign eligibility, impression share, '
+                    'audience saturation and delivery changes.')
+        if np.isfinite(ctr) and ctr < -5:
+            return ('Click-through weakened; review creative, targeting and placements before changing spend.')
+        return ('Identify the campaigns and audiences behind stronger traffic; test whether the '
+                'improvement can be replicated.' if improving else
+                'Review campaign delivery, click-to-session tracking, landing pages and demand changes.')
+    if driver == 'cvr':
+        return ('Identify the products, landing pages and customer segments behind improved '
+                'conversion; validate and test replication.' if improving else
+                'Check checkout friction, site speed, inventory availability, promotion changes and '
+                'device-level conversion before altering media budgets.')
+    return ('Investigate which merchandise, baskets and price types drove higher order value; '
+            'test whether the mix is sustainable.' if improving else
+            'Review discounting, product mix, basket composition and high-value product availability.')
+
+
+def find_marketing_discoveries(df, days=7, minimum=0):
+    """Top absolute GA4 revenue movements, with no minimum-dollar exclusion.
+
+    Revenue changes are descriptive and do not estimate incremental marketing impact.
+    """
     end = df.date.max()
     cur = df[df.date.between(end-pd.Timedelta(days=days-1), end)]
     prior = df[df.date.between(end-pd.Timedelta(days=2*days-1), end-pd.Timedelta(days=days))]
@@ -104,19 +171,28 @@ def find_marketing_discoveries(df, days=7, minimum=25000):
             continue
         a, b = _metrics(group), _metrics(old)
         gap = a['ga4_revenue'] - b['ga4_revenue']
+        # Linear TV has no digital attribution and is not eligible for GA4 revenue discoveries.
+        if channel == 'Linear TV' or (a['ga4_revenue'] == 0 and b['ga4_revenue'] == 0):
+            continue
         if abs(gap) < minimum:
             continue
-        session_delta = a['sessions'] / max(b['sessions'], 1) - 1
-        conversion_delta = a['cvr'] / max(b['cvr'], .0001) - 1
-        aov_now = a['ga4_revenue'] / max(group.transactions.sum(), 1)
-        aov_old = b['ga4_revenue'] / max(old.transactions.sum(), 1)
-        aov_delta = aov_now / max(aov_old, .0001) - 1
-        drivers = {'Sessions': session_delta, 'Conversion': conversion_delta, 'Order value': aov_delta}
-        driver = max(drivers, key=lambda x: abs(drivers[x]))
-        rows.append({'channel':channel,'subchannel':sub,'gap':gap,'current':a,'prior':b,
-                     'driver':driver,'driver_pct':drivers[driver]*100,
-                     'spend_change':100*(a['spend']/max(b['spend'],1)-1)})
+        contributions = _contributions(a, b)
+        if contributions is None:
+            driver = 'unavailable'
+            driver_amount = np.nan
+        else:
+            driver = max(contributions, key=lambda k: abs(contributions[k]))
+            driver_amount = contributions[driver]
+        rows.append({'channel': channel, 'subchannel': sub, 'gap': gap,
+                     'current': a, 'prior': b, 'driver': driver,
+                     'driver_amount': driver_amount, 'contributions': contributions,
+                     'recommendation': _diagnosis(a, b, driver, gap) if contributions else
+                     'Investigate transaction and revenue tracking before interpreting this change.'})
     return sorted(rows, key=lambda x: abs(x['gap']), reverse=True)[:3]
+
+
+def _fmt_delta(x):
+    return f'{x:+.1f}%' if np.isfinite(x) else 'N/A'
 
 
 def _money(x):
@@ -151,30 +227,50 @@ def render_marketing(data):
 
     st.caption(f'Store sales (existing): {_money(store_sales)} · Online sales: {_money(ecom_sales)} · GA4 coverage of online revenue: {m["ga4_revenue"]/ecom_sales:.1%}. GA4 revenue is a subset of online revenue, not additive.')
     st.markdown('<div class="ri-section">✦ &nbsp; Top Marketing AI Discoveries</div>', unsafe_allow_html=True)
-    st.caption('Largest absolute GA4 attributed-revenue changes versus the immediately preceding equal-length period. Minimum $25K. These are descriptive, not causal.')
+    st.caption('Top three absolute GA4 attributed-revenue changes versus the immediately preceding equal-length period. No minimum-dollar threshold. Descriptive, not incremental.')
     tabs = st.tabs(list(PERIODS))
     for tab, (label, days) in zip(tabs, PERIODS.items()):
         with tab:
-            discoveries = find_marketing_discoveries(df, days)
+            discoveries = find_marketing_discoveries(df, days, minimum=0)
             if not discoveries:
-                st.info('No subchannel exceeds the $25K threshold for this period, or insufficient comparable history.')
+                st.info('Insufficient comparable history or no eligible GA4 revenue changes for this period.')
             for i, item in enumerate(discoveries, 1):
                 positive = item['gap'] >= 0
                 color = '#34D399' if positive else '#FB7185'
-                status = 'OUTPERFORMING' if positive else 'UNDERPERFORMING'
-                direction = 'higher' if positive else 'lower'
-                recommendation = {
-                    'Sessions': ('Investigate reach, search demand, delivery and landing-page traffic.' if not positive else 'Check which demand and acquisition patterns can be replicated.'),
-                    'Conversion': ('Review landing-page experience, product availability and checkout friction.' if not positive else 'Identify conversion improvements and test replication.'),
-                    'Order value': ('Review discounting, merchandise mix and basket composition.' if not positive else 'Investigate higher-value baskets and merchandising practices.'),
-                }[item['driver']]
+                status = 'GA4 REVENUE UP' if positive else 'GA4 REVENUE DOWN'
+                driver = item['driver']
+                driver_label = {'sessions':'Traffic', 'cvr':'Conversion', 'aov':'Order value'}.get(driver, 'Unclassified')
+                driver_amount = item['driver_amount']
+                if np.isfinite(driver_amount):
+                    title = f'{driver_label} is the largest contributor to the {item["channel"]} / {item["subchannel"]} revenue change'
+                    component = (('+' if driver_amount >= 0 else '−') + _money(driver_amount))
+                else:
+                    title = f'{item["channel"]} / {item["subchannel"]}: investigate the GA4 revenue change'
+                    component = 'N/A'
+                a, b = item['current'], item['prior']
+                evidence = (f'Spend {_fmt_delta(_pct_change(a["spend"],b["spend"]))} · '
+                            f'Impressions {_fmt_delta(_pct_change(a["impressions"],b["impressions"]))} · '
+                            f'Clicks {_fmt_delta(_pct_change(a["clicks"],b["clicks"]))} · '
+                            f'CPC {_fmt_delta(_pct_change(a["cpc"],b["cpc"]))} · '
+                            f'GA4 sessions {_fmt_delta(_pct_change(a["sessions"],b["sessions"]))} · '
+                            f'Conversion {_fmt_delta(_pct_change(a["cvr"],b["cvr"]))}')
+                contrib = item['contributions']
+                if contrib:
+                    parts = ' · '.join(f'{name}: {( "+" if value >= 0 else "−")}{_money(value)}'
+                                       for name, value in [('Traffic',contrib['sessions']),
+                                                           ('Conversion',contrib['cvr']),
+                                                           ('Order value',contrib['aov'])])
+                else:
+                    parts = 'Driver decomposition unavailable due to missing/zero transaction values.'
                 st.markdown(f'''<div style="background:#20172e;border:1px solid #49325f;border-left:4px solid {color};border-radius:13px;padding:22px;margin:14px 0;">
                     <div style="color:{color};font-weight:800;letter-spacing:.08em;font-size:13px">#{i} &nbsp; {status} &nbsp; · &nbsp; {days}-DAY WINDOW</div>
-                    <div style="font-size:23px;font-weight:750;color:#f8fafc;margin-top:12px">{escape(item['channel'])} / {escape(item['subchannel'])}: {escape(item['driver'].lower())} is the largest relative change</div>
-                    <div style="font-size:34px;font-weight:850;color:{color};margin:10px 0">{'+' if positive else '−'}{_money(item['gap'])}</div>
-                    <div style="color:#cbd5e1">GA4 attributed revenue is {direction} than the preceding period. {escape(item['driver'])} changed {item['driver_pct']:+.1f}%; spend changed {item['spend_change']:+.1f}%.</div>
-                    <div style="background:#342a43;border-left:3px solid #facc15;color:#fde68a;padding:12px;margin-top:14px;border-radius:6px"><b>What to investigate:</b> {escape(recommendation)}</div>
-                    <div style="color:#a6a1b7;font-size:12px;margin-top:10px">Exploratory · GA4 attribution proxy · Not incremental revenue or proven financial impact</div>
+                    <div style="font-size:23px;font-weight:750;color:#f8fafc;margin-top:12px">{escape(title)}</div>
+                    <div style="font-size:34px;font-weight:850;color:{color};margin:10px 0">{('+' if positive else '−')}{_money(item['gap'])}</div>
+                    <div style="color:#cbd5e1">GA4 attributed-revenue change vs preceding period · Largest calculated component: {escape(driver_label)} {escape(component)}</div>
+                    <div style="color:#c4b5fd;margin-top:10px">{escape(parts)}</div>
+                    <div style="color:#cbd5e1;margin-top:10px">{escape(evidence)}</div>
+                    <div style="background:#342a43;border-left:3px solid #facc15;color:#fde68a;padding:12px;margin-top:14px;border-radius:6px"><b>What to investigate:</b> {escape(item['recommendation'])}</div>
+                    <div style="color:#a6a1b7;font-size:12px;margin-top:10px">Exploratory · GA4 attributed revenue is not incremental revenue · No causal conclusion</div>
                     </div>''', unsafe_allow_html=True)
 
     st.markdown('<div class="ri-section">Marketing investment by channel and subchannel</div>', unsafe_allow_html=True)
@@ -207,4 +303,24 @@ def render_marketing(data):
     with st.expander('GA4 and platform details'):
         st.dataframe(by_channel.sort_values('spend',ascending=False),hide_index=True,use_container_width=True)
         st.caption('Platform spend, clicks, and impressions are simulated. GA4 sessions and revenue are synthetic attributed signals, not additions to business sales.')
+    st.markdown('<div class="ri-section">Platform + GA4 diagnostics</div>', unsafe_allow_html=True)
+    selected_channel = st.selectbox('Channel', sorted(df.channel.unique()), key='marketing_diag_channel')
+    subchoices = sorted(df.loc[df.channel == selected_channel, 'subchannel'].unique())
+    selected_sub = st.selectbox('Subchannel', subchoices, key='marketing_diag_subchannel')
+    view = df[(df.channel == selected_channel) & (df.subchannel == selected_sub)].copy()
+    view['cpm'] = np.where(view.impressions > 0, 1000 * view.spend / view.impressions, np.nan)
+    view['cpc'] = np.where(view.clicks > 0, view.spend / view.clicks, np.nan)
+    view['ctr_pct'] = np.where(view.impressions > 0, 100 * view.clicks / view.impressions, np.nan)
+    view['conversion_pct'] = np.where(view.sessions > 0, 100 * view.transactions / view.sessions, np.nan)
+    view['revenue_per_session'] = np.where(view.sessions > 0, view.ga4_revenue / view.sessions, np.nan)
+    diag_days = st.selectbox('Diagnostic window', list(PERIODS), index=1, key='marketing_diag_window')
+    diag_end = view.date.max()
+    view = view.loc[view.date >= diag_end - pd.Timedelta(days=PERIODS[diag_days]-1)]
+    st.dataframe(view[['date','spend','impressions','clicks','cpm','cpc','ctr_pct',
+                       'sessions','transactions','conversion_pct','revenue_per_session','ga4_revenue']].sort_values('date',ascending=False),
+                 hide_index=True, width='stretch')
+    if selected_channel == 'Linear TV':
+        st.caption('Linear TV has offline awareness impressions and no modeled GA4 click or revenue attribution.')
+    else:
+        st.caption('Synthetic delivery and attributed GA4 signals; changes are diagnostic, not incremental media effects.')
     st.info('MMM and budget optimization are intentionally not shown yet: this dataset was constructed after sales generation and cannot validate causal media contribution.')
