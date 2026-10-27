@@ -8,6 +8,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 from html import escape
+from retailiq.ecommerce import generate_ecommerce
 
 CHANNELS = {
     'Paid Search': ('Brand', 'Non-Brand', 'Shopping'),
@@ -22,41 +23,46 @@ PERIODS = {'Yesterday': 1, 'Last 7 Days': 7, 'Last Month': 28,
 
 @st.cache_data(show_spinner=False)
 def make_marketing(data):
-    """Deterministic simulation: common dates, and sales/traffic anchors.
+    """Generate synthetic platform activity; reconcile GA4 revenue to online sales.
 
-    Marketing spend is simulated after sales were generated. It must NOT be
-    interpreted as the data-generating cause of sales.
+    The simulator is observational. Platform spend is not the causal driver of
+    the previously generated store or e-commerce sales.
     """
-    daily = (data.groupby('date', as_index=False)
-             .agg(total_sales=('sales', 'sum'), store_traffic=('traffic', 'sum'),
-                  store_orders=('orders', 'sum'))).sort_values('date')
+    from retailiq.ecommerce import generate_ecommerce
+    daily = generate_ecommerce(data)
     rng = np.random.default_rng(20261027)
     channel_weight = {'Paid Search': .34, 'Paid Social': .24, 'Display': .12,
                       'Video': .12, 'Affiliate': .08, 'Email': .10}
     records = []
     for i, r in enumerate(daily.itertuples(index=False)):
-        # A common underlying seasonal demand signal links the two datasets.
-        seasonal = 1 + .12 * np.sin(2 * np.pi * i / 365.25)
+        seasonal = 1 + .12 * np.sin(2*np.pi*i/365.25)
+        day_records = []
         for channel, subchannels in CHANNELS.items():
             for sub in subchannels:
                 weight = channel_weight[channel] / len(subchannels)
-                spend = max(0, r.total_sales * .075 * weight * seasonal * rng.lognormal(0, .11))
+                spend = max(0, r.total_business_sales * .055 * weight * seasonal * rng.lognormal(0, .11))
                 cpm = {'Paid Search': 20, 'Paid Social': 13, 'Display': 7,
                        'Video': 11, 'Affiliate': 15, 'Email': 2}[channel] * rng.lognormal(0, .08)
                 impressions = spend * 1000 / cpm
                 ctr = {'Paid Search': .038, 'Paid Social': .013, 'Display': .004,
                        'Video': .007, 'Affiliate': .025, 'Email': .055}[channel] * rng.lognormal(0, .09)
                 clicks = int(round(impressions * ctr))
-                sessions = int(round(clicks * np.clip(rng.normal(.84, .045), .65, .96)))
-                # Session-to-order proxy is bounded and tied to actual store demand.
-                digital_cv = np.clip(.021 * (r.store_orders / max(r.store_traffic, 1)) / .26
-                                     * rng.lognormal(0, .10), .004, .07)
-                transactions = int(round(sessions * digital_cv))
-                # This is attributed GA4 proxy revenue, NOT additional business revenue.
-                aov = r.total_sales / max(r.store_orders, 1)
-                ga4_revenue = transactions * aov * rng.lognormal(0, .045)
-                records.append((r.date, channel, sub, spend, impressions, clicks,
-                                sessions, transactions, ga4_revenue))
+                sessions = max(1, int(round(clicks * np.clip(rng.normal(.84, .045), .65, .96))))
+                # Channel attribution weights are independent of reported spend ROI.
+                weight_tx = sessions * {'Paid Search':1.3,'Paid Social':.8,'Display':.5,
+                                        'Video':.45,'Affiliate':1.4,'Email':1.65}[channel]
+                day_records.append([r.date,channel,sub,spend,impressions,clicks,sessions,weight_tx])
+        weights = np.array([x[-1] for x in day_records], dtype=float)
+        weights /= weights.sum()
+        # GA4 tracks 91-97% of online revenue in this fictional business.
+        coverage = float(np.clip(rng.normal(.945, .012), .91, .97))
+        tracked_revenue = float(r.ecom_sales * coverage)
+        # Exact allocation: each attributed dollar belongs to one subchannel.
+        allocation = tracked_revenue * weights
+        allocation[-1] = tracked_revenue - allocation[:-1].sum()
+        estimated_orders = np.maximum(0, np.rint(r.ecom_orders * coverage * weights).astype(int))
+        for j, item in enumerate(day_records):
+            records.append((*item[:7], int(estimated_orders[j]), float(allocation[j])))
     return pd.DataFrame(records, columns=['date','channel','subchannel','spend','impressions',
                                            'clicks','sessions','transactions','ga4_revenue'])
 
@@ -107,24 +113,30 @@ def _money(x):
 def render_marketing(data):
     st.markdown('<div class="ri-eyebrow">RETAILIQ AI / MARKETING INTELLIGENCE</div>', unsafe_allow_html=True)
     st.title('Make every marketing dollar count.')
-    st.caption('Synthetic marketing signals aligned to existing store sales dates and demand. GA4 is an attribution proxy; no incremental ROI claims.')
+    st.caption('Synthetic store and e-commerce business with reconciled GA4 online attribution. No incremental ROI claims.')
     df = make_marketing(data)
     end = df.date.max()
     current = df[df.date.between(end-pd.Timedelta(days=6),end)]
     m = _metrics(current)
-    sales = data.loc[data.date.between(end-pd.Timedelta(days=6),end),'sales'].sum()
-    cols = st.columns(4)
+    commerce = generate_ecommerce(data)
+    week = commerce.loc[commerce.date.between(end-pd.Timedelta(days=6),end)]
+    store_sales = week.store_sales.sum()
+    ecom_sales = week.ecom_sales.sum()
+    total_sales = week.total_business_sales.sum()
+    cols = st.columns(5)
     for col, (label, value, detail) in zip(cols, [
         ('Platform spend', _money(m['spend']), 'Last 7 days'),
         ('GA4 sessions', f'{m["sessions"]:,.0f}', 'Modeled digital visits'),
         ('GA4 attributed revenue', _money(m['ga4_revenue']), 'Non-incremental proxy'),
-        ('Business sales', _money(sales), 'Same source as Sales Intelligence'),
+        ('E-commerce sales', _money(ecom_sales), 'Synthetic online business'),
+        ('Total business sales', _money(total_sales), 'Stores + e-commerce'),
     ]):
         with col:
             st.markdown(f'<div class="ri-kpi"><div class="ri-kpi-label">{label}</div>'
                         f'<div class="ri-kpi-value">{value}</div>'
                         f'<div class="ri-kpi-bottom">{detail}</div></div>', unsafe_allow_html=True)
 
+    st.caption(f'Store sales (existing): {_money(store_sales)} · Online sales: {_money(ecom_sales)} · GA4 coverage of online revenue: {m["ga4_revenue"]/ecom_sales:.1%}. GA4 revenue is a subset of online revenue, not additive.')
     st.markdown('<div class="ri-section">✦ &nbsp; Top Marketing AI Discoveries</div>', unsafe_allow_html=True)
     st.caption('Largest absolute GA4 attributed-revenue changes versus the immediately preceding equal-length period. Minimum $25K. These are descriptive, not causal.')
     tabs = st.tabs(list(PERIODS))
