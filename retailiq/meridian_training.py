@@ -9,8 +9,8 @@ import pandas as pd
 
 CONTROLS = [
     'promotion', 'severe_weather', 'season_sin', 'season_cos', 'time_index',
-    'black_friday', 'cyber_monday', 'christmas_week', 'pre_christmas',
-    'thanksgiving_week', 'new_year_week', 'back_to_school',
+    'black_friday', 'christmas_week', 'pre_christmas',
+    'new_year_week', 'back_to_school',
 ]
 OUTCOMES = {'stores': 'store_sales', 'ecommerce': 'ecom_sales'}
 EXCLUDE = {'week_start_date', 'store_sales', 'ecom_sales', 'total_sales',
