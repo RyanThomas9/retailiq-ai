@@ -4,6 +4,7 @@ No corporate data. Does not modify the application's existing store/e-commerce d
 Ground truth is intentionally separate from model inputs.
 """
 from pathlib import Path
+from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
@@ -29,6 +30,35 @@ def _adstock(x, decay):
     return out
 
 
+def _retail_calendar(dates):
+    """Calendar events at Monday-start weekly grain, independently of media spend."""
+    def thanksgiving(year):
+        nov1 = date(year, 11, 1)
+        first_thursday = nov1 + timedelta(days=(3 - nov1.weekday()) % 7)
+        return first_thursday + timedelta(weeks=3)
+
+    flags = {k: np.zeros(len(dates), dtype=int) for k in (
+        'black_friday', 'cyber_monday', 'christmas_week', 'pre_christmas',
+        'thanksgiving_week', 'new_year_week', 'back_to_school')}
+    for i, stamp in enumerate(dates):
+        start = stamp.date()
+        end = start + timedelta(days=6)
+        def within(d): return start <= d <= end
+        for year in (start.year, end.year):
+            thanks = thanksgiving(year)
+            if within(thanks): flags['thanksgiving_week'][i] = 1
+            if within(thanks + timedelta(days=1)): flags['black_friday'][i] = 1
+            if within(thanks + timedelta(days=4)): flags['cyber_monday'][i] = 1
+            if within(date(year,12,25)): flags['christmas_week'][i] = 1
+            if within(date(year,1,1)): flags['new_year_week'][i] = 1
+        # Two weeks preceding the week containing Christmas, avoiding double-counting.
+        christmas_week_start = date(start.year,12,25) - timedelta(days=date(start.year,12,25).weekday())
+        if start in (christmas_week_start-timedelta(weeks=1),christmas_week_start-timedelta(weeks=2)):
+            flags['pre_christmas'][i] = 1
+        if start.month in (7,8): flags['back_to_school'][i] = 1
+    return flags
+
+
 def generate(seed=20261028, n_weeks=156, last_week='2026-10-19'):
     if n_weeks < 104:
         raise ValueError('At least 104 weeks required for annual validation')
@@ -37,18 +67,32 @@ def generate(seed=20261028, n_weeks=156, last_week='2026-10-19'):
     t = np.arange(n_weeks)
     yearly = np.sin(2*np.pi*t/52.18)
     winter = np.cos(2*np.pi*t/52.18)
+    events = _retail_calendar(dates)
     holiday = np.isin(dates.month, [11, 12]).astype(float)
     promotion = (rng.random(n_weeks) < .19).astype(float)
     severe_weather = (rng.random(n_weeks) < .07).astype(float)
     trend = 1 + .00055*t
-    baseline = 4_450_000 * trend * (1 + .085*yearly + .045*winter + .16*holiday + .055*promotion - .045*severe_weather)
+    holiday_lift = (.09*holiday + .22*events['black_friday'] + .09*events['cyber_monday']
+                    + .13*events['pre_christmas'] + .07*events['christmas_week']
+                    - .035*events['new_year_week'] + .045*events['back_to_school'])
+    baseline = 4_450_000 * trend * (1 + .085*yearly + .045*winter + holiday_lift
+                                     + .055*promotion - .045*severe_weather)
     baseline = np.maximum(baseline, 2_000_000)
     noise = rng.normal(0, .012, n_weeks) * baseline
-    # Spend mix is driven by plans, calendar and random operational variation, not realized sales noise.
+    # Budget is set from demand forecasts available before actual sales occur.
+    # A planning forecast has uncertainty, preventing perfect spend/sales coupling.
+    planning_error = rng.normal(0, .028, n_weeks)
+    planned_demand = baseline * (1 + planning_error)
+    # Plan around 5% of anticipated total sales, including an expected media contribution.
+    expected_media_lift = 850_000
+    weekly_budget = SPEND_RATE * (planned_demand + expected_media_lift)
+    weekly_budget *= rng.lognormal(-.5*.045**2, .045, n_weeks)
+    # Spend has no dependence on the current week's realized sales or sales noise.
     keys = [(ch, sub) for ch, subs in CHANNELS.items() for sub in subs]
     base_mix = np.array([CHANNEL_WEIGHTS[ch]*CHANNELS[ch][sub] for ch, sub in keys])
     raw = np.exp(rng.normal(0, .095, (n_weeks, len(keys)))) * base_mix
-    raw *= (1 + .09*holiday[:, None]*np.array([1 if k[0] in ('Paid Search','Paid Social') else 0 for k in keys]))
+    raw *= (1 + (.09*holiday + .20*events['black_friday'] + .12*events['cyber_monday'])[:, None]
+               * np.array([1 if k[0] in ('Paid Search','Paid Social') else 0 for k in keys]))
     shares = raw / raw.sum(axis=1, keepdims=True)
     # Hidden true parameters differ by objective, with longer adstock for awareness.
     decays = np.array([.66 if 'Linear TV' in sub else (.55 if 'Awareness' in sub else (.35 if 'Consideration' in sub else .12)) for _,sub in keys])
@@ -56,21 +100,11 @@ def generate(seed=20261028, n_weeks=156, last_week='2026-10-19'):
     max_lifts = np.array([165000 if 'Linear TV' in sub else (115000 if 'Awareness' in sub else (90000 if 'Consideration' in sub else 140000)) for _,sub in keys], dtype=float)
     half_sats = np.array([45000 if 'Linear TV' in sub else (32000 if 'Awareness' in sub else 20000) for _,sub in keys], dtype=float)
     hill_exponent = 1.35
-    # Fixed-point iteration: weekly spend equals 5% of realized total sales, including media lift.
-    sales = baseline + noise
-    for _ in range(40):
-        spend = SPEND_RATE * sales[:, None] * shares
-        ad = np.column_stack([_adstock(spend[:, j], decays[j]) for j in range(len(keys))])
-        lift = max_lifts * ad**hill_exponent / (half_sats**hill_exponent + ad**hill_exponent)
-        new_sales = baseline + noise + lift.sum(axis=1)
-        if np.max(np.abs(new_sales-sales)) < .00001:
-            sales = new_sales
-            break
-        sales = new_sales
-    spend = SPEND_RATE * sales[:, None] * shares
+    spend = weekly_budget[:, None] * shares
     ad = np.column_stack([_adstock(spend[:, j], decays[j]) for j in range(len(keys))])
     lift = max_lifts * ad**hill_exponent / (half_sats**hill_exponent + ad**hill_exponent)
     media_total = lift.sum(axis=1)
+    sales = baseline + noise + media_total
     # Split total sales across store and e-commerce with variable but reconciled share.
     ecom_share = np.clip(.145 + .018*yearly + .012*holiday + rng.normal(0,.005,n_weeks), .10, .22)
     store_sales = sales*(1-ecom_share)
@@ -79,14 +113,16 @@ def generate(seed=20261028, n_weeks=156, last_week='2026-10-19'):
                            'ecom_sales':ecom_sales, 'total_sales':sales,
                            'baseline_demand':baseline, 'promotion':promotion.astype(int),
                            'holiday':holiday.astype(int), 'severe_weather':severe_weather.astype(int),
-                           'season_sin':yearly, 'season_cos':winter, 'time_index':t})
+                           'season_sin':yearly, 'season_cos':winter, 'time_index':t,
+                           'planned_demand':planned_demand, 'planned_media_budget':weekly_budget,
+                           **events})
     long = pd.DataFrame({'week_start_date':np.repeat(dates,len(keys)),
                          'channel':[ch for _ in dates for ch,_ in keys],
                          'subchannel':[sub for _ in dates for _,sub in keys],
                          'spend':spend.ravel()})
     # Modeling data excludes baseline and truth parameters to avoid leakage.
     wide = long.pivot(index='week_start_date', columns='subchannel', values='spend').reset_index()
-    model = weekly.drop(columns=['baseline_demand']).merge(wide, on='week_start_date',validate='one_to_one')
+    model = weekly.drop(columns=['baseline_demand', 'planned_demand']).merge(wide, on='week_start_date',validate='one_to_one')
     truth = pd.DataFrame({'week_start_date':np.repeat(dates,len(keys)),
                           'subchannel':[sub for _ in dates for _,sub in keys],
                           'true_incremental_revenue':lift.ravel(),
@@ -103,18 +139,25 @@ def generate(seed=20261028, n_weeks=156, last_week='2026-10-19'):
 def validate(model, long, truth, baseline_truth):
     by_week = long.groupby('week_start_date').spend.sum().sort_index()
     m = model.set_index('week_start_date').sort_index()
-    assert len(m) == 156, f'Expected 156 weeks, got {len(m)}'
+    assert len(m) >= 104, f'Expected at least 104 weeks, got {len(m)}'
     assert len(long) == len(m)*13
     assert long.groupby('week_start_date').subchannel.nunique().eq(13).all()
     assert np.allclose(m.store_sales+m.ecom_sales,m.total_sales,atol=.01)
-    assert np.allclose(by_week.to_numpy(), .05*m.total_sales.to_numpy(), atol=.01)
+    assert np.allclose(by_week.to_numpy(), m.planned_media_budget.to_numpy(), atol=.01)
+    spend_ratio = by_week / m.total_sales
+    assert spend_ratio.between(.035, .065).all(), 'Spend should stay near 5% of realized sales'
     assert (m.total_sales > 0).all() and (long.spend > 0).all()
     effects = truth.groupby('week_start_date').true_incremental_revenue.sum().sort_index()
     b = baseline_truth.set_index('week_start_date').sort_index()
     assert np.allclose(b.baseline_demand+b.unobserved_noise+effects,m.total_sales,atol=.01)
     assert np.isfinite(model.select_dtypes(include='number').to_numpy()).all()
-    return {'weeks':len(m), 'subchannels':13, 'weekly_spend_ratio_min':float((by_week/m.total_sales).min()),
-            'weekly_spend_ratio_max':float((by_week/m.total_sales).max()),
+    assert (m.black_friday.sum() >= 2 and m.christmas_week.sum() >= 2)
+    assert (m.cyber_monday.sum() >= 2 and m.pre_christmas.sum() >= 4)
+    assert np.allclose(m.planned_media_budget.to_numpy(), by_week.to_numpy())
+    return {'weeks':len(m), 'subchannels':13, 'weekly_spend_ratio_min':float(spend_ratio.min()),
+            'weekly_spend_ratio_max':float(spend_ratio.max()),
+            'weekly_spend_ratio_mean':float(spend_ratio.mean()),
+            'black_friday_weeks':int(m.black_friday.sum()), 'christmas_weeks':int(m.christmas_week.sum()),
             'mean_weekly_sales':float(m.total_sales.mean()), 'mean_weekly_spend':float(by_week.mean()),
             'mean_true_incremental_revenue':float(effects.mean())}
 
