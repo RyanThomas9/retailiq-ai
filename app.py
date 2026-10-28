@@ -40,7 +40,8 @@ NAV_GROUPS = {
         ("◎  Macro Intelligence", "Macro Intelligence"),
         ("☁  Weather Intelligence", "Weather Intelligence"),
     ],
-    "ANALYTICS & VALIDATION": [
+    "MODEL VALIDATION": [
+        ("◈  Marketing Mix Modeling (MMM)", "Marketing Mix Modeling (MMM)"),
         ("◇  Testing Intelligence", "Testing Intelligence"),
         ("◷  Model Performance", "Model Performance"),
     ],
@@ -49,7 +50,7 @@ NAV_GROUPS = {
 # These two areas are planned; don't imply that their models already exist.
 AVAILABLE = {"Executive Intelligence", "Sales Intelligence", "Marketing Intelligence",
              "Customer Intelligence", "Merchandise Intelligence", "Store Intelligence",
-             "Macro Intelligence", "Weather Intelligence", "Testing Intelligence", "Model Performance"}
+             "Macro Intelligence", "Weather Intelligence", "Marketing Mix Modeling (MMM)", "Testing Intelligence", "Model Performance"}
 if "ri_page" not in st.session_state:
     st.session_state.ri_page = "Executive Intelligence"
 
@@ -75,7 +76,7 @@ if page.startswith('◈'):
 
     render_executive(scored, quality, findings)
 else:
-    sections = ['Sales Intelligence', 'Marketing Intelligence', 'Customer Intelligence', 'Merchandise Intelligence', 'Store Intelligence', 'Weather Intelligence', 'Macro Intelligence', 'Testing Intelligence', 'Model Performance']
+    sections = ['Sales Intelligence', 'Marketing Intelligence', 'Customer Intelligence', 'Merchandise Intelligence', 'Store Intelligence', 'Weather Intelligence', 'Macro Intelligence', 'Marketing Mix Modeling (MMM)', 'Testing Intelligence', 'Model Performance']
     chosen = next((x for x in sections if x in page), sections[0])
     tabs = st.tabs([chosen])
     # Each navigation item has its own page; reuse the existing section implementations below.
@@ -119,6 +120,9 @@ else:
     if section == 6:
         render_macro()
     if section == 7:
+        from retailiq.mmm_explorer import render_mmm_validation
+        render_mmm_validation()
+    if section == 8:
         st.markdown('#### Testing Intelligence')
         st.write('Design and analyze a simple hypothetical store experiment.')
         x, y = st.columns(2)
@@ -131,7 +135,7 @@ else:
         lift = difference_in_differences(tb, ta, cb, ca)
         st.metric('Difference-in-differences estimate', f'${lift:+,.0f}')
         st.caption('Illustrative point estimate only. Requires pre-trend validation, independent units, uncertainty intervals, and design assumptions before causal interpretation.')
-    if section == 8:
+    if section == 9:
         st.markdown('#### Historical holdout validation')
         st.write(f'Trained on {quality["train_rows"]:,} synthetic store-days before {quality["cutoff"]}. Tested on the last 90 days.')
         st.metric('WAPE', f'{quality["wape"]:.2f}%')
