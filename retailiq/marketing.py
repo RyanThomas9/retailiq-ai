@@ -412,8 +412,8 @@ def render_marketing(data):
             st.caption('Platform spend, clicks, and impressions are simulated. GA4 sessions and revenue are synthetic attributed signals, not additions to business sales.')
     with mmm_tab:
         st.markdown('<div class="ri-section">Marketing Mix Modeling</div>', unsafe_allow_html=True)
-        st.info('Coming soon: a real Bayesian MMM with adstock, saturation, uncertainty and validation. No fabricated incremental ROI is displayed.')
-        st.caption('Current marketing data is observational and was constructed after the synthetic sales history. It cannot establish incremental effects.')
+        from retailiq.mmm_explorer import render_mmm_explorer
+        render_mmm_explorer()
     with optimization_tab:
         st.markdown('<div class="ri-section">Budget Optimization</div>', unsafe_allow_html=True)
         st.info('Coming soon: constrained channel and subchannel allocation based on validated marginal response curves.')
