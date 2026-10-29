@@ -13,8 +13,16 @@ CONTROLS = [
     'new_year_week', 'back_to_school',
 ]
 OUTCOMES = {'stores': 'store_sales', 'ecommerce': 'ecom_sales'}
-EXCLUDE = {'week_start_date', 'store_sales', 'ecom_sales', 'total_sales',
-           'planned_media_budget', 'holiday'} | set(CONTROLS)
+EXCLUDE = {
+    'week_start_date',
+    'store_sales',
+    'ecom_sales',
+    'total_sales',
+    'planned_media_budget',
+    'holiday',
+    'thanksgiving_week',
+    'cyber_monday',
+} | set(CONTROLS)
 
 
 def prepare_frame(csv_path, outcome):
