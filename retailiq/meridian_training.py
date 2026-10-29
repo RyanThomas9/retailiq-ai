@@ -45,56 +45,82 @@ EXCLUDE = {
 def prepare_frame(csv_path, outcome):
     if outcome not in OUTCOMES:
         raise ValueError(f'Unknown outcome {outcome}')
+
     raw = pd.read_csv(csv_path)
-    required = {'week_start_date', OUTCOMES[outcome]} | set(CONTROLS)
+
+    required = (
+        {'week_start_date', OUTCOMES[outcome]}
+        | set(CONTROLS)
+        | set(MEDIA_COLUMNS)
+    )
     missing = required - set(raw.columns)
     if missing:
         raise ValueError(f'Missing columns: {sorted(missing)}')
+
     raw['week_start_date'] = pd.to_datetime(raw['week_start_date'])
     raw = raw.sort_values('week_start_date').reset_index(drop=True)
+
     if raw.week_start_date.duplicated().any():
         raise ValueError('Duplicate weeks')
-    if not (raw.week_start_date.diff().dropna() == pd.Timedelta(days=7)).all():
+
+    if not (
+        raw.week_start_date.diff().dropna()
+        == pd.Timedelta(days=7)
+    ).all():
         raise ValueError('Weeks must be consecutive')
 
-    # Only media spend columns remain. The simulator currently uses spend as the
-    # media execution proxy, so cost and execution have the same values.
-    
+    # Use only the 13 explicitly defined marketing subchannels.
     media = MEDIA_COLUMNS
-
-    missing_media = [name for name in media if name not in raw.columns]
-    if missing_media:
-        raise ValueError(
-        f'Missing marketing subchannels: {missing_media}'
-        )
 
     if len(media) != 13:
         raise ValueError(
-        f'Expected 13 subchannels, found {len(media)}'
-    )
+            f'Expected 13 subchannels, found {len(media)}'
+        )
 
-# Check that every required marketing column is numeric.
-for name in media:
-    raw[name] = pd.to_numeric(raw[name], errors='raise')
+    # Validate numeric marketing inputs.
+    for name in media:
+        raw[name] = pd.to_numeric(raw[name], errors='raise')
 
     if raw[media + [OUTCOMES[outcome]] + CONTROLS].isna().any().any():
         raise ValueError('Missing input values')
+
     if (raw[media] < 0).any().any():
         raise ValueError('Negative spend')
+
     if (raw[OUTCOMES[outcome]] <= 0).any():
         raise ValueError('Non-positive revenue')
+
     if len(raw) != 156:
         raise ValueError(f'Expected 156 weeks, got {len(raw)}')
-    prepared = pd.DataFrame({'time': raw.week_start_date.dt.strftime('%Y-%m-%d'),
-                             'kpi': raw[OUTCOMES[outcome]]})
+
+    prepared = pd.DataFrame({
+        'time': raw.week_start_date.dt.strftime('%Y-%m-%d'),
+        'kpi': raw[OUTCOMES[outcome]]
+    })
+
     for i, name in enumerate(media):
         prepared[f'media_{i:02d}'] = raw[name].astype(float)
         prepared[f'spend_{i:02d}'] = raw[name].astype(float)
+
     for name in CONTROLS:
         prepared[name] = raw[name].astype(float)
-    mapping = {f'media_{i:02d}': name for i, name in enumerate(media)}
-    spend_mapping = {f'spend_{i:02d}': name for i, name in enumerate(media)}
-    assert np.allclose(raw[media].sum(axis=1), raw.planned_media_budget, atol=.01)
+
+    mapping = {
+        f'media_{i:02d}': name
+        for i, name in enumerate(media)
+    }
+
+    spend_mapping = {
+        f'spend_{i:02d}': name
+        for i, name in enumerate(media)
+    }
+
+    assert np.allclose(
+        raw[media].sum(axis=1),
+        raw.planned_media_budget,
+        atol=.01
+    )
+
     return prepared, mapping, spend_mapping, raw
 
 
