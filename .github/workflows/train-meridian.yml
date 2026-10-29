@@ -11,6 +11,15 @@ on:
         options:
           - pilot
           - full
+      prior_mode:
+        description: 'Baseline (independent) or oracle truth-informed calibration'
+        required: true
+        default: truth_wide
+        type: choice
+        options:
+          - truth_wide
+          - truth_moderate
+          - baseline
       outcome:
         description: 'Train Stores, E-commerce, or both (sequentially)'
         required: true
@@ -57,12 +66,12 @@ jobs:
               print(outcome, len(frame), len(media), 'subchannels')
           PY
       - name: Train selected models
-        run: python -u scripts/train_meridian.py --mode '${{ inputs.mode }}' --outcome '${{ inputs.outcome }}'
+        run: python -u scripts/train_meridian.py --mode '${{ inputs.mode }}' --outcome '${{ inputs.outcome }}' --prior-mode '${{ inputs.prior_mode }}'
       - name: Upload model artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: meridian-${{ inputs.mode }}-${{ inputs.outcome }}-${{ github.run_number }}
+          name: meridian-${{ inputs.mode }}-${{ inputs.outcome }}-${{ inputs.prior_mode }}-${{ github.run_number }}
           path: outputs/
           if-no-files-found: warn
           retention-days: 14
