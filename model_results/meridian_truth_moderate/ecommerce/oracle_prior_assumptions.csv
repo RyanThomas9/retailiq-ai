@@ -1,0 +1,14 @@
+subchannel,prior_mean_roi,lognormal_sigma,prior_mode
+Affiliate- Conversion,1.6987526864796239,0.35,truth_moderate
+Display-Awareness,0.3896787608512635,0.35,truth_moderate
+Display-Consideration,0.5806108995109505,0.35,truth_moderate
+Display-Conversion,1.7084845629465513,0.35,truth_moderate
+Email- Conversion,1.5327222217265986,0.35,truth_moderate
+Linear TV- Awareness,0.20503632735227192,0.35,truth_moderate
+Paid Search- Conversion,0.6224469555827213,0.35,truth_moderate
+Paid Social- Awareness,0.4521963832902468,0.35,truth_moderate
+Paid Social- Consideration,0.6435556967266081,0.35,truth_moderate
+Paid Social- Conversion,1.1127468782480132,0.35,truth_moderate
+Video -Awareness,0.43625198350699795,0.35,truth_moderate
+Video -Consideration,0.6446158929267788,0.35,truth_moderate
+Video -Conversion,1.3252842493901733,0.35,truth_moderate
