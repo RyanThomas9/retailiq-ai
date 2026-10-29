@@ -78,7 +78,6 @@ def generate(seed=20261028, n_weeks=156, last_week='2026-10-19'):
     baseline = 4_450_000 * trend * (1 + .085*yearly + .045*winter + holiday_lift
                                      + .055*promotion - .045*severe_weather)
     baseline = np.maximum(baseline, 2_000_000)
-    noise = rng.normal(0, .012, n_weeks) * baseline
     # Budget is set from demand forecasts available before actual sales occur.
     # A planning forecast has uncertainty, preventing perfect spend/sales coupling.
     planning_error = rng.normal(0, .028, n_weeks)
@@ -94,21 +93,39 @@ def generate(seed=20261028, n_weeks=156, last_week='2026-10-19'):
     raw *= (1 + (.09*holiday + .20*events['black_friday'] + .12*events['cyber_monday'])[:, None]
                * np.array([1 if k[0] in ('Paid Search','Paid Social') else 0 for k in keys]))
     shares = raw / raw.sum(axis=1, keepdims=True)
-    # Hidden true parameters differ by objective, with longer adstock for awareness.
-    decays = np.array([.66 if 'Linear TV' in sub else (.55 if 'Awareness' in sub else (.35 if 'Consideration' in sub else .12)) for _,sub in keys])
-    # Hill response in dollars per week, parameters intentionally retained only in truth table.
-    max_lifts = np.array([165000 if 'Linear TV' in sub else (115000 if 'Awareness' in sub else (90000 if 'Consideration' in sub else 140000)) for _,sub in keys], dtype=float)
-    half_sats = np.array([45000 if 'Linear TV' in sub else (32000 if 'Awareness' in sub else 20000) for _,sub in keys], dtype=float)
+    # Separate, hidden outcome response parameters. Media inputs remain shared.
+    # Weekly spend is planned before either outcome is realized.
+    decays = np.array([.66 if 'Linear TV' in sub else (.55 if 'Awareness' in sub else (.35 if 'Consideration' in sub else .12)) for _, sub in keys])
+    half_sats = np.array([45000 if 'Linear TV' in sub else (32000 if 'Awareness' in sub else 20000) for _, sub in keys], dtype=float)
     hill_exponent = 1.35
     spend = weekly_budget[:, None] * shares
     ad = np.column_stack([_adstock(spend[:, j], decays[j]) for j in range(len(keys))])
-    lift = max_lifts * ad**hill_exponent / (half_sats**hill_exponent + ad**hill_exponent)
-    media_total = lift.sum(axis=1)
-    sales = baseline + noise + media_total
-    # Split total sales across store and e-commerce with variable but reconciled share.
-    ecom_share = np.clip(.145 + .018*yearly + .012*holiday + rng.normal(0,.005,n_weeks), .10, .22)
-    store_sales = sales*(1-ecom_share)
-    ecom_sales = sales*ecom_share
+    response = ad**hill_exponent / (half_sats**hill_exponent + ad**hill_exponent)
+
+    # Channel-specific store vs online strengths, NOT passed to Meridian.
+    # Positive but heterogeneous responses make the two outcomes distinguishable.
+    store_max = np.array([110000 if 'Linear TV' in sub else
+                          70000 if 'Awareness' in sub else
+                          45000 if 'Consideration' in sub else
+                          (40000 if 'Email' in sub else 85000) for _, sub in keys], dtype=float)
+    ecom_max = np.array([18000 if 'Linear TV' in sub else
+                         26000 if 'Awareness' in sub else
+                         23000 if 'Consideration' in sub else
+                         (55000 if 'Email' in sub else 65000) for _, sub in keys], dtype=float)
+    store_lift = response * store_max
+    ecom_lift = response * ecom_max
+    media_total = (store_lift + ecom_lift).sum(axis=1)
+
+    # Demand and nonmedia effects are split BEFORE adding channel effects.
+    # This avoids the old proportional allocation of one common marketing effect.
+    ecom_baseline_share = np.clip(.145 + .018*yearly + .012*holiday + rng.normal(0,.005,n_weeks), .10, .22)
+    store_baseline = baseline * (1 - ecom_baseline_share)
+    ecom_baseline = baseline * ecom_baseline_share
+    store_noise = rng.normal(0, .010, n_weeks) * store_baseline
+    ecom_noise = rng.normal(0, .016, n_weeks) * ecom_baseline
+    store_sales = store_baseline + store_noise + store_lift.sum(axis=1)
+    ecom_sales = ecom_baseline + ecom_noise + ecom_lift.sum(axis=1)
+    sales = store_sales + ecom_sales
     weekly = pd.DataFrame({'week_start_date':dates, 'store_sales':store_sales,
                            'ecom_sales':ecom_sales, 'total_sales':sales,
                            'baseline_demand':baseline, 'promotion':promotion.astype(int),
@@ -125,14 +142,21 @@ def generate(seed=20261028, n_weeks=156, last_week='2026-10-19'):
     model = weekly.drop(columns=['baseline_demand', 'planned_demand']).merge(wide, on='week_start_date',validate='one_to_one')
     truth = pd.DataFrame({'week_start_date':np.repeat(dates,len(keys)),
                           'subchannel':[sub for _ in dates for _,sub in keys],
-                          'true_incremental_revenue':lift.ravel(),
+                          'true_store_incremental_revenue':store_lift.ravel(),
+                          'true_ecom_incremental_revenue':ecom_lift.ravel(),
+                          'true_incremental_revenue':(store_lift+ecom_lift).ravel(),
                           'true_adstock':ad.ravel(),
                           'true_decay':np.tile(decays,n_weeks),
                           'true_half_saturation':np.tile(half_sats,n_weeks),
-                          'true_max_lift':np.tile(max_lifts,n_weeks),
+                          'true_store_max_lift':np.tile(store_max,n_weeks),
+                          'true_ecom_max_lift':np.tile(ecom_max,n_weeks),
                           'true_hill_exponent':hill_exponent})
     baseline_truth = weekly[['week_start_date','baseline_demand']].copy()
-    baseline_truth['unobserved_noise'] = noise
+    baseline_truth['store_baseline_demand'] = store_baseline
+    baseline_truth['ecom_baseline_demand'] = ecom_baseline
+    baseline_truth['store_unobserved_noise'] = store_noise
+    baseline_truth['ecom_unobserved_noise'] = ecom_noise
+    baseline_truth['unobserved_noise'] = store_noise + ecom_noise
     return model, long, truth, baseline_truth
 
 
@@ -150,6 +174,10 @@ def validate(model, long, truth, baseline_truth):
     effects = truth.groupby('week_start_date').true_incremental_revenue.sum().sort_index()
     b = baseline_truth.set_index('week_start_date').sort_index()
     assert np.allclose(b.baseline_demand+b.unobserved_noise+effects,m.total_sales,atol=.01)
+    store_effects = truth.groupby('week_start_date').true_store_incremental_revenue.sum().sort_index()
+    ecom_effects = truth.groupby('week_start_date').true_ecom_incremental_revenue.sum().sort_index()
+    assert np.allclose(b.store_baseline_demand+b.store_unobserved_noise+store_effects,m.store_sales,atol=.01)
+    assert np.allclose(b.ecom_baseline_demand+b.ecom_unobserved_noise+ecom_effects,m.ecom_sales,atol=.01)
     assert np.isfinite(model.select_dtypes(include='number').to_numpy()).all()
     assert (m.black_friday.sum() >= 2 and m.christmas_week.sum() >= 2)
     assert (m.cyber_monday.sum() >= 2 and m.pre_christmas.sum() >= 4)
@@ -171,6 +199,17 @@ def export(directory, seed=20261028):
     long.to_csv(out/'marketing_spend_long.csv',index=False)
     truth.to_csv(out/'GROUND_TRUTH_DO_NOT_TRAIN.csv',index=False)
     baseline.to_csv(out/'GROUND_TRUTH_BASELINE_DO_NOT_TRAIN.csv',index=False)
+    reconciliation = baseline.merge(model[['week_start_date','store_sales','ecom_sales','total_sales']], on='week_start_date')
+    totals = truth.groupby('week_start_date',as_index=False)[['true_store_incremental_revenue','true_ecom_incremental_revenue','true_incremental_revenue']].sum()
+    reconciliation = reconciliation.merge(totals,on='week_start_date')
+    for prefix in ('store','ecom'):
+        reconciliation[f'{prefix}_reconciled_sales'] = (reconciliation[f'{prefix}_baseline_demand'] +
+            reconciliation[f'{prefix}_unobserved_noise'] + reconciliation[f'true_{prefix}_incremental_revenue'])
+        reconciliation[f'{prefix}_reconciliation_error'] = reconciliation[f'{prefix}_sales'] - reconciliation[f'{prefix}_reconciled_sales']
+    reconciliation['total_reconciliation_error'] = (reconciliation.total_sales -
+        (reconciliation.baseline_demand + reconciliation.unobserved_noise + reconciliation.true_incremental_revenue))
+    assert reconciliation[['store_reconciliation_error','ecom_reconciliation_error','total_reconciliation_error']].abs().to_numpy().max() < .01
+    reconciliation.to_csv(out/'GROUND_TRUTH_WEEKLY_RECONCILIATION_DO_NOT_TRAIN.csv',index=False)
     return stats
 
 if __name__ == '__main__':
