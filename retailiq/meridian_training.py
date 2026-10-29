@@ -12,6 +12,23 @@ CONTROLS = [
     'black_friday', 'christmas_week', 'pre_christmas',
     'new_year_week', 'back_to_school',
 ]
+
+MEDIA_COLUMNS = [
+    'Affiliate- Conversion',
+    'Display-Awareness',
+    'Display-Consideration',
+    'Display-Conversion',
+    'Email- Conversion',
+    'Linear TV- Awareness',
+    'Paid Search- Conversion',
+    'Paid Social- Awareness',
+    'Paid Social- Consideration',
+    'Paid Social- Conversion',
+    'Video -Awareness',
+    'Video -Consideration',
+    'Video -Conversion',
+]
+
 OUTCOMES = {'stores': 'store_sales', 'ecommerce': 'ecom_sales'}
 EXCLUDE = {
     'week_start_date',
@@ -42,8 +59,24 @@ def prepare_frame(csv_path, outcome):
     media = sorted(set(raw.columns) - EXCLUDE)
     # Only media spend columns remain. The simulator currently uses spend as the
     # media execution proxy, so cost and execution have the same values.
+    
+    media = MEDIA_COLUMNS
+
+    missing_media = [name for name in media if name not in raw.columns]
+    if missing_media:
+        raise ValueError(
+        f'Missing marketing subchannels: {missing_media}'
+        )
+
     if len(media) != 13:
-        raise ValueError(f'Expected 13 subchannels, found {len(media)}: {media}')
+        raise ValueError(
+        f'Expected 13 subchannels, found {len(media)}'
+    )
+
+# Check that every required marketing column is numeric.
+for name in media:
+    raw[name] = pd.to_numeric(raw[name], errors='raise')
+
     if raw[media + [OUTCOMES[outcome]] + CONTROLS].isna().any().any():
         raise ValueError('Missing input values')
     if (raw[media] < 0).any().any():
