@@ -17,7 +17,7 @@ def _fmt(v):
 
 def render_mmm_explorer():
     st.markdown('<div class="ri-section">MMM Data Explorer</div>', unsafe_allow_html=True)
-    st.caption('Separate 156-week synthetic MMM training scenario. These sales are NOT the live Executive/Sales Intelligence sales series. No Meridian model has been fitted.')
+    st.caption('Separate 156-week synthetic MMM training scenario. These sales are NOT the live Executive/Sales Intelligence sales series.')
     try:
         weekly, long, checks = load_mmm_data()
     except Exception as exc:
@@ -54,30 +54,8 @@ def render_mmm_explorer():
         st.dataframe(weekly.tail(20).sort_values('week_start_date', ascending=False), hide_index=True, use_container_width=True)
         st.success(f'{checks["weeks"]} weeks · {checks["subchannels"]} subchannels · weekly spend ratio {checks["weekly_spend_ratio_min"]:.2%}–{checks["weekly_spend_ratio_max"]:.2%}.')
         st.caption('Store + e-commerce = total sales; 13 subchannels reconcile to planned spend. Hidden ground truth is excluded from training inputs.')
-    st.info('Next step: configure, train and validate Google Meridian. Incremental revenue, iROAS and marginal ROAS are not yet model results.')
+    st.caption('The fitted results are shown above; this explorer documents the separate synthetic training scenario.')
 
 def render_mmm_validation():
-    st.markdown('<div class="ri-eyebrow">RETAILIQ AI / MODEL VALIDATION</div>', unsafe_allow_html=True)
-    st.title('Marketing Mix Modeling (MMM)')
-    st.caption('Data readiness and model diagnostics. No fitted Bayesian model yet.')
-    try:
-        model, spend, checks = load_mmm_data()
-    except Exception as exc:
-        st.error(f'MMM data readiness check failed: {exc}')
-        return
-    metrics = [
-        ('Framework', 'Google Meridian (planned)'),
-        ('Training history', f'{checks["weeks"]} weeks'),
-        ('Subchannels', str(checks['subchannels'])),
-        ('Outcomes', 'Store + E-commerce (planned separate fits)'),
-        ('Sales / spend reconciliation', 'Passed'),
-        ('Holiday and promotion controls', 'Available'),
-        ('R-hat', 'Pending model fit'),
-        ('Effective sample size', 'Pending model fit'),
-        ('Holdout WAPE', 'Pending model fit'),
-        ('Posterior predictive checks', 'Pending model fit'),
-        ('Channel ROI ground-truth recovery', 'Pending model fit'),
-        ('Experiment calibration', 'Pending experiment'),
-    ]
-    st.dataframe(pd.DataFrame(metrics, columns=['Validation metric','Status / result']), hide_index=True, use_container_width=True)
-    st.caption('Ground-truth incremental contributions are deliberately excluded from training inputs; validation will compare estimates with withheld truth after fitting.')
+    from retailiq.mmm_results import render_mmm_model_validation
+    render_mmm_model_validation()

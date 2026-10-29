@@ -412,8 +412,11 @@ def render_marketing(data):
             st.caption('Platform spend, clicks, and impressions are simulated. GA4 sessions and revenue are synthetic attributed signals, not additions to business sales.')
     with mmm_tab:
         st.markdown('<div class="ri-section">Marketing Mix Modeling</div>', unsafe_allow_html=True)
-        from retailiq.mmm_explorer import render_mmm_explorer
-        render_mmm_explorer()
+        from retailiq.mmm_results import render_mmm_results
+        render_mmm_results()
+        with st.expander("MMM Training Data Explorer"):
+            from retailiq.mmm_explorer import render_mmm_explorer
+            render_mmm_explorer()
     with optimization_tab:
         st.markdown('<div class="ri-section">Budget Optimization</div>', unsafe_allow_html=True)
         st.info('Coming soon: constrained channel and subchannel allocation based on validated marginal response curves.')
