@@ -56,7 +56,7 @@ def prepare_frame(csv_path, outcome):
         raise ValueError('Duplicate weeks')
     if not (raw.week_start_date.diff().dropna() == pd.Timedelta(days=7)).all():
         raise ValueError('Weeks must be consecutive')
-    media = sorted(set(raw.columns) - EXCLUDE)
+    media = MEDIA_COLUMNS
     # Only media spend columns remain. The simulator currently uses spend as the
     # media execution proxy, so cost and execution have the same values.
     
