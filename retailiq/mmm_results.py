@@ -65,6 +65,10 @@ def render_mmm_results():
     if results is None:
         st.info('Fitted Meridian results have not been published yet. Upload the model_results folder from the integration package.')
         return
+    from retailiq.mmm_weekly_view import render_weekly_contributions
+    render_weekly_contributions()
+    st.divider()
+    st.markdown('#### Full-history Meridian summary')
     view = st.radio('Business outcome', ['Total Business', 'Stores', 'E-commerce'], horizontal=True, key='mmm_results_outcome')
     if view == 'Total Business':
         frame = _combined(results)
@@ -99,7 +103,7 @@ def render_mmm_results():
                          hide_index=True, use_container_width=True)
     else:
         st.caption('Combined credible intervals and combined mROAS are not shown: they require combining joint posterior draws or consistent counterfactual curves, not adding interval endpoints.')
-    st.info('Weekly baseline decomposition, holdout accuracy and response curves are not available in this export. They will be added after proper posterior-predictive and counterfactual outputs are generated.')
+    st.caption('Predictive holdout validation and response curves remain pending. Weekly model fit is in-sample.')
 
 def render_mmm_model_validation():
     st.markdown('<div class="ri-eyebrow">RETAILIQ AI / MODEL VALIDATION</div>', unsafe_allow_html=True)
