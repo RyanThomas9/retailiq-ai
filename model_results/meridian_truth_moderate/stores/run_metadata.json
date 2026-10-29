@@ -1,0 +1,17 @@
+{
+  "outcome": "stores",
+  "pilot": false,
+  "prior_mode": "truth_moderate",
+  "oracle_calibrated": true,
+  "weeks": 156,
+  "subchannels": 13,
+  "sampling": {
+    "n_chains": 4,
+    "n_adapt": 750,
+    "n_burnin": 500,
+    "n_keep": 750
+  },
+  "elapsed_seconds": 58.7,
+  "status": "requires_validation",
+  "caution": "Oracle priors use synthetic truth; ROI recovery is not independent. Not approved for decisions; validate convergence, identifiability, predictive checks, and predictive accuracy."
+}
