@@ -15,6 +15,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from retailiq.meridian_training import prepare_frame, truth_roi, CONTROLS, save_metrics_table
+from retailiq.mmm_weekly_export import export_weekly
 
 
 def train(outcome, pilot, output_dir, prior_mode):
@@ -103,6 +104,8 @@ def train(outcome, pilot, output_dir, prior_mode):
     diagnostics.to_csv(folder / 'convergence.csv')
     summary = analyzer.Analyzer(mmm).summary_metrics()
     save_metrics_table(summary, folder / 'channel_summary_raw.csv')
+    print(f'Exporting fitted weekly counterfactuals for {outcome}...', flush=True)
+    export_weekly(analyzer.Analyzer(mmm), raw, media_map, folder, outcome)
     truth = truth_roi(
         ROOT / 'sample_data' / 'GROUND_TRUTH_DO_NOT_TRAIN.csv',
         ROOT / 'sample_data' / 'marketing_spend_long.csv',
