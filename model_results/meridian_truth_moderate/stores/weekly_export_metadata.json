@@ -1,0 +1,9 @@
+{
+  "outcome": "stores",
+  "weeks": 156,
+  "channels": 13,
+  "draws": 3000,
+  "baseline_definition": "fitted expected revenue minus summed media contributions; includes controls",
+  "residual_definition": "observed minus fitted revenue",
+  "warning": "Historical fitted decomposition, not holdout accuracy. Calibrated using synthetic true ROI priors."
+}
