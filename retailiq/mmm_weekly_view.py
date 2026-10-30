@@ -13,7 +13,7 @@ def _read_weekly(outcome):
     folder = BASE / outcome
     fit = pd.read_csv(folder / 'weekly_model_fit.csv', parse_dates=['week_start_date'])
     media = pd.read_csv(folder / 'weekly_media_contribution.csv', parse_dates=['week_start_date'])
-    with np.load(folder / 'weekly_posterior_draws.npz', allow_pickle=False) as z:
+    with np.load(folder / 'weekly_posterior_draws.npz', allow_pickle=True) as z:
         draws = z['incremental'].copy()
         dates = pd.to_datetime(z['dates'])
         channels = z['channels'].astype(str)
