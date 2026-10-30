@@ -27,7 +27,7 @@ def _read_weekly(outcome):
 
 
 def render_weekly_contributions():
-    st.markdown('#### Weekly MMM Sales & Contribution')
+    st.markdown('#### Marketing Contribution & Performance')
     st.caption('Select exact modeled weeks. Aggregates fitted posterior contributions, not full-history ROI allocated to weeks. Truth-informed synthetic calibration.')
     try:
         stores = _read_weekly('stores')
@@ -87,36 +87,87 @@ def render_weekly_contributions():
     if not np.isclose(actual, baseline + inc + residual, atol=0.05):
         st.error('Weekly sales reconciliation failed.')
         return
-    kpis = [
-        ('Demand Sales', actual), ('Marketing Sales', inc), ('Base + Controls', baseline),
-        ('Spend', spend), ('iROAS', inc/spend if spend else np.nan),
-        ('% Marketing Sales', inc/actual if actual else np.nan),
+    # Reconcile the executive definition to OBSERVED sales. Residual stays visible
+    # in Model Validation, rather than being represented as a modeled effect.
+    base_sales = baseline + residual
+    if not np.isclose(actual, base_sales + inc, atol=0.05):
+        st.error('Executive sales reconciliation failed.')
+        return
+
+    st.markdown("""<style>
+    .mmm-score {background:#1e2233;border:1px solid #3c4058;border-radius:12px;
+      padding:13px 16px;min-height:108px}
+    .mmm-score-label {font-size:12px;color:#bfc7dc;font-weight:650}
+    .mmm-score-number {font-size:26px;font-weight:750;color:#f8fafc;margin-top:7px}
+    .mmm-score-note {font-size:11px;color:#a7b0c7;margin-top:4px}
+    .mmm-section-title {font-size:18px;font-weight:750;color:#f8fafc;margin-top:18px}
+    </style>""", unsafe_allow_html=True)
+    def money(x):
+        return f'${x/1e6:,.2f}M' if abs(x)>=1e6 else f'${x/1e3:,.0f}K'
+    def score(label, value, note, positive=False):
+        color = '#34d399' if positive else '#f8fafc'
+        st.markdown(f'<div class="mmm-score"><div class="mmm-score-label">{label}</div>'
+                    f'<div class="mmm-score-number" style="color:{color}">{value}</div>'
+                    f'<div class="mmm-score-note">{note}</div></div>', unsafe_allow_html=True)
+
+    cols = st.columns(7, gap='small')
+    cards = [
+        ('Total Sales', money(actual), 'Observed sales', False),
+        ('Marketing Sales', money(inc), 'Modeled contribution', True),
+        ('Base Sales', money(base_sales), 'Includes fitted residual', False),
+        ('Spend', money(spend), 'Marketing investment', False),
+        ('iROAS', f'{inc/spend:.2f}x' if spend else 'N/A', 'Selected weeks', True),
+        ('mROAS', 'Pending', 'Needs period-specific export', False),
+        ('% Marketing Sales', f'{inc/actual:.1%}' if actual else 'N/A', 'Share of observed sales', True),
     ]
-    cols = st.columns(3)
-    for i,(name,value) in enumerate(kpis):
-        display = f'{value:.2f}x' if name=='iROAS' else f'{value:.1%}' if name.startswith('%') else f'${value/1e6:,.2f}M'
-        cols[i%3].metric(name, display)
-    st.caption(f'{last-first+1} modeled weeks · {labels[first]} through {labels[last]} · Fitted residual: ${residual:,.0f}. Base includes seasonality, promotions, holidays and weather; these are not separately attributed.')
+    for col, (label, value, note, positive) in zip(cols, cards):
+        with col:
+            score(label, value, note, positive)
+    st.caption(f'{last-first+1} modeled weeks · {labels[first]} to {labels[last]} · '
+               f'Total Sales = Base Sales + Marketing Sales. Base Sales includes the ${residual:,.0f} fitted residual.')
+
+    # Summarize seven channels, then reveal the thirteen original subchannels.
+    parent_map = {
+        'Paid Search':'Paid Search', 'Paid Social':'Paid Social',
+        'Video':'Video', 'Display':'Display', 'Linear TV':'Linear TV',
+        'Email':'Email', 'Affiliate':'Affiliate'
+    }
+    detail = selected.groupby('subchannel', as_index=False)[['spend','incremental_revenue']].sum()
+    detail['Channel'] = detail['subchannel'].map(lambda name: next(
+        (parent for prefix,parent in parent_map.items() if name.strip().startswith(prefix)), 'Other'))
+    group = detail.groupby('Channel',as_index=False)[['spend','incremental_revenue']].sum()
+    group['iROAS'] = group.incremental_revenue / group.spend.replace(0,np.nan)
+    group['% Marketing Sales'] = group.incremental_revenue / inc if inc else np.nan
+    group = group.sort_values('incremental_revenue',ascending=False)
+    st.markdown('<div class="mmm-section-title">Marketing contribution by channel</div>',unsafe_allow_html=True)
+    st.dataframe(group.rename(columns={'incremental_revenue':'Marketing Sales','spend':'Spend'})
+        .style.format({'Marketing Sales':'${:,.0f}','Spend':'${:,.0f}',
+                       'iROAS':'{:.2f}x','% Marketing Sales':'{:.1%}'}),
+        hide_index=True,width='stretch')
+    with st.expander('View all 13 subchannels'):
+        detail['iROAS'] = detail.incremental_revenue / detail.spend.replace(0,np.nan)
+        detail['% Marketing Sales'] = detail.incremental_revenue / inc if inc else np.nan
+        detail = detail.sort_values(['Channel','incremental_revenue'],ascending=[True,False])
+        st.dataframe(detail.rename(columns={'subchannel':'Subchannel',
+            'incremental_revenue':'Marketing Sales','spend':'Spend'})
+            .style.format({'Marketing Sales':'${:,.0f}','Spend':'${:,.0f}',
+                           'iROAS':'{:.2f}x','% Marketing Sales':'{:.1%}'}),
+            hide_index=True,width='stretch')
+    st.caption('iROAS is the ratio of summed modeled incremental revenue to summed spend. '
+               'Custom-period mROAS and YoY comparisons are not available from the current exports.')
     if draws is not None:
         roi_draws = draws[:, sl, :].sum(axis=(1,2)) / spend if spend else np.array([])
         if roi_draws.size:
             st.caption(f'Modeled iROAS 90% posterior interval for selected weeks: {np.quantile(roi_draws,.05):.2f}x to {np.quantile(roi_draws,.95):.2f}x (joint weekly draws).')
+    window['base_sales'] = window['baseline_and_controls'] + window['residual']
     # Trend: weekly observed/fitted, baseline and media
     fig = go.Figure()
-    for name, field, color in [('Observed sales','actual_sales','#F8FAFC'), ('Fitted sales','fitted_sales','#A78BFA'), ('Base + controls','baseline_and_controls','#64748B'), ('Marketing contribution','marketing_contribution','#10B981')]:
+    for name, field, color in [('Observed sales','actual_sales','#F8FAFC'), ('Fitted sales','fitted_sales','#A78BFA'), ('Base Sales','base_sales','#64748B'), ('Marketing contribution','marketing_contribution','#10B981')]:
         fig.add_trace(go.Scatter(x=window.week_start_date,y=window[field],name=name,mode='lines',line=dict(color=color,width=2)))
-    fig.update_layout(title='Weekly sales decomposition',template='plotly_dark',height=340,hovermode='x unified',paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',yaxis_title='Revenue ($)',legend=dict(orientation='h',y=-0.25))
+    fig.update_layout(title='Weekly sales decomposition',template='plotly_dark',height=285,hovermode='x unified',paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',yaxis_title='Revenue ($)',legend=dict(orientation='h',y=-0.25))
     st.plotly_chart(fig, use_container_width=True)
     pivot = selected.pivot_table(index='week_start_date',columns='subchannel',values='incremental_revenue',aggfunc='sum').fillna(0)
     stacked = px.area(pivot.reset_index().melt('week_start_date',var_name='Subchannel',value_name='Incremental revenue'),x='week_start_date',y='Incremental revenue',color='Subchannel',title='Weekly contribution by subchannel')
-    stacked.update_layout(template='plotly_dark',height=400,paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',hovermode='x unified')
+    stacked.update_layout(template='plotly_dark',height=290,paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',hovermode='x unified')
     st.plotly_chart(stacked, use_container_width=True)
-    table = selected.groupby('subchannel',as_index=False)[['spend','incremental_revenue']].sum()
-    table['iROAS'] = table.incremental_revenue / table.spend.replace(0,np.nan)
-    table['% of Marketing Sales'] = table.incremental_revenue / inc if inc else np.nan
-    table = table.sort_values('incremental_revenue',ascending=False)
-    fig2=px.bar(table.sort_values('incremental_revenue'),x='incremental_revenue',y='subchannel',orientation='h',title='Ranked incremental revenue by subchannel')
-    fig2.update_layout(template='plotly_dark',height=470,paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',xaxis_title='Incremental revenue ($)',yaxis_title='')
-    st.plotly_chart(fig2,use_container_width=True)
-    st.dataframe(table.rename(columns={'subchannel':'Subchannel','spend':'Spend','incremental_revenue':'Marketing Sales'}).style.format({'Spend':'${:,.0f}','Marketing Sales':'${:,.0f}','iROAS':'{:.2f}x','% of Marketing Sales':'{:.1%}'}),hide_index=True,use_container_width=True)
-    st.caption('Selected-week mROAS and YoY contribution are not displayed until the matching counterfactual and comparison-period exports exist. Full-history mROAS from the separate aggregate table should not be reused for a custom period.')
+    st.caption('The residual-adjusted Base Sales line reconciles to observed sales; it is not an independent model estimate of baseline demand.')
